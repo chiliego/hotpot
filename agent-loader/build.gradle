@@ -26,5 +26,5 @@ dependencies {
 
 application {
     // Define the main class for the application.
-    mainClass = 'fsu.intrumentation.AgentLoader'
+    mainClass = 'fsu.instrumentation.AgentLoader'
 }
