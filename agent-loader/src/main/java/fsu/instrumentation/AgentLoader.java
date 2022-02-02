@@ -3,27 +3,46 @@
  */
 package fsu.instrumentation;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Properties;
 
+import com.sun.tools.attach.AgentInitializationException;
+import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public class AgentLoader {
+    private static Logger LOGGER = LogManager.getLogger();
+
     public String getGreeting() {
         return "Hello World!";
     }
 
     public static void main(String[] args) {
         try {
-            VirtualMachine vm = VirtualMachine.attach(args[0]);
-            //jvm.loadAgent(agentFile.getAbsolutePath());
-            //jvm.detach();
+            String vmPid = args[0];
+            String agentFilePath = args[1];
+            VirtualMachine vm = VirtualMachine.attach(vmPid);
+            vm.loadAgent(agentFilePath);
+            vm.detach();
         } catch (AttachNotSupportedException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
         } catch (IOException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+        } catch (AgentLoadException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (AgentInitializationException e) {
+            LOGGER.error("Init Error", e);
+            LOGGER.error("Return Code {}", e.returnValue());
         }
         System.out.println(new AgentLoader().getGreeting());
     }
