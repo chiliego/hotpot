@@ -1,19 +1,18 @@
 package fsu.instrumentation;
 
-import java.io.PrintWriter;
-import java.lang.instrument.ClassFileTransformer;
-import java.lang.instrument.IllegalClassFormatException;
+import java.io.IOException;
 import java.lang.instrument.Instrumentation;
-import java.security.ProtectionDomain;
+import java.lang.instrument.UnmodifiableClassException;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.util.TraceClassVisitor;
 
 public class Agent {
     private static Logger LOGGER = LogManager.getLogger();
@@ -23,81 +22,108 @@ public class Agent {
         agentmain(agentArgs, inst);
     }
 
-    public static void agentmain(String agentArgs, Instrumentation inst) {
+    public static void agentmain(String className, Instrumentation inst) {
         LOGGER.info("[Agent] In agentmain method");
+        // see if we can get the class using forName
         try {
-            inst.addTransformer(new MyClassTransformer());
-        } catch (Exception e) {
-            LOGGER.error("Something is wrong!", e);
+            TransformerService ts = new TransformerService(inst);
+            ts.transform(className);
+        } catch (Exception ex) {
+            LOGGER.error("Class [{}] not found with Class.forName");
         }
     }
 
-    public static class MyClassTransformer implements ClassFileTransformer {
-        @Override
-        public byte[] transform(ClassLoader l, String name, Class c, ProtectionDomain d, byte[] b)
-                throws IllegalClassFormatException {
-            String className = "fsu.jportal.util.MetsUtil".replaceAll("\\.", "/");
-            if (name.equals(className)) {
-                CustomClassWriter cr = new CustomClassWriter(b);
-                return cr.showMethods();
+    private static class TransformerService {
+        private Instrumentation inst;
+
+        public TransformerService(Instrumentation inst) {
+            this.inst = inst;
+        }
+
+        public void transformStr(String className) {
+            MyClassTransformerStr transformer = new MyClassTransformerStr(className);
+            inst.addTransformer(transformer, true);
+        }
+
+        public void transform(String className) {
+            MyClassTransformer transformer;
+            Class<?> targetCls;
+
+            try {
+                targetCls = Class.forName(className);
+                ClassLoader targetClassLoader = targetCls.getClassLoader();
+                transformer = new MyClassTransformer(className, targetClassLoader);
+            } catch (ClassNotFoundException e) {
+                LOGGER.error("Could not load class " + className + ".", e);
+                return;
             }
-            return b;
+
+            try {
+                inst.addTransformer(transformer, true);
+                inst.retransformClasses(targetCls);
+                WatchServiceThread watchService = new WatchServiceThread(() -> inst.retransformClasses(targetCls));
+                new Thread(watchService).start();
+            } catch (UnmodifiableClassException e) {
+                LOGGER.error("Can not retransform class " + className + ".", e);
+            }
         }
+        
     }
 
-    public static class CustomClassWriter {
-        ClassReader reader;
-        ClassWriter writer;
-
-        public CustomClassWriter(byte[] contents) {
-            setReader(new ClassReader(contents));
-            setWriter(new ClassWriter(reader, 0));
-        }
-
-        public byte[] showMethods() {
-            ShowMethodsAdapter showMethodsAdapter = new ShowMethodsAdapter(getWriter());
-            getReader().accept(showMethodsAdapter, 0);
-            return getWriter().toByteArray();
-        }
-
-        public ClassReader getReader() {
-            return reader;
-        }
-
-        public void setReader(ClassReader reader) {
-            this.reader = reader;
-        }
-
-        public ClassWriter getWriter() {
-            return writer;
-        }
-
-        public void setWriter(ClassWriter writer) {
-            this.writer = writer;
-        }
+    /**
+     * Executor
+     */ 
+    public interface Command {
+        public void run() throws UnmodifiableClassException;
     }
 
-    public static class ShowMethodsAdapter extends ClassVisitor {
-        private static Logger LOGGER = LogManager.getLogger();
-        TraceClassVisitor tracer;
-        PrintWriter pw = new PrintWriter(System.out);
+    private static class WatchServiceThread implements Runnable {
+        private Command cmd;
 
-        public ShowMethodsAdapter(ClassVisitor classVisitor) {
-            super(Opcodes.ASM4, classVisitor);
+        public WatchServiceThread(Command cmd) {
+            this.cmd = cmd;
         }
-
         @Override
-        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
-                String[] exceptions) {
-            LOGGER.info("Wisiting method " + name);
-            return tracer.visitMethod(access, name, descriptor, signature, exceptions);
+        public void run() {
+            try {
+                watchForChanges(this.cmd);
+            } catch (UnmodifiableClassException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
         }
 
-        @Override
-        public void visitEnd() {
-            tracer.visitEnd();
-            LOGGER.info(tracer.p.getText());
+        public void watchForChanges(Command cmd) throws UnmodifiableClassException {
+        
+            try {
+                WatchService watchService = FileSystems.getDefault().newWatchService();
+        
+                Path path = Paths.get("/workspaces/myApp/app/bin/main/org/chiliego");
+                path.register(
+                        watchService,
+                        StandardWatchEventKinds.ENTRY_MODIFY);
+                WatchKey key;
+                while ((key = watchService.take()) != null) {
+                    for (WatchEvent<?> event : key.pollEvents()) {
+                        Path changed = (Path)event.context();
+                        LOGGER.info("Event kind: {}. File affected: {}.", event.kind(), changed);
+                        if (changed.endsWith("FaultyClass.class")) {
+                            cmd.run();;
+                        } else {
+                            LOGGER.info("Class don't end with FaultyClass.class");
+                        }
+                    }
+                    key.reset();
+                }
+            } catch (IOException e) {
+                LOGGER.error("Coud not register watchservice.", e);
+            } catch (InterruptedException e) {
+                LOGGER.error("Watchservice coud not get key.", e);
+            }
+    
         }
+        
     }
 
+    
 }
