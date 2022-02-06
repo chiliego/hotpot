@@ -5,12 +5,17 @@ package fsu.instrumentation;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
+import com.sun.tools.attach.VirtualMachineDescriptor;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,12 +28,31 @@ public class AgentLoader {
     }
 
     public static void main(String[] args) {
+        //iterate all jvms and get the first one that matches our application name
+        List<VirtualMachineDescriptor> vmList = VirtualMachine.list();
+        int vmCount = vmList.size();
+
+        for (int i = 0; i < vmCount; i++) {
+            VirtualMachineDescriptor vm = vmList.get(i);
+            String vmDisplayName = vm .displayName();
+            String pid = vm.id();
+            System.out.println("["+ i + "] " + vmDisplayName + " pid: " + pid);
+        }
+        
+        System.out.print("Choose JVM [0 - " + (--vmCount) + "]: ");
+        String vmNumber = System.console().readLine();
+        VirtualMachineDescriptor selectedVM = vmList.get(Integer.parseInt(vmNumber));
+        System.out.println("You choose JVM " + selectedVM.displayName() + " pid: " + selectedVM.id());
+
         try {
-            String vmPid = args[0];
-            String agentFilePath = args[1];
-            VirtualMachine vm = VirtualMachine.attach(vmPid);
-            vm.loadAgent(agentFilePath);
+            String jvmPid = selectedVM.id();
+            LOGGER.info("Attaching to target JVM with PID: " + jvmPid);
+            String agentFilePath = args[0];
+            String classToShow = args[1];
+            VirtualMachine vm = VirtualMachine.attach(jvmPid);
+            vm.loadAgent(agentFilePath, classToShow);
             vm.detach();
+            LOGGER.info("Attached to target JVM and loaded Java agent successfully");
         } catch (AttachNotSupportedException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
