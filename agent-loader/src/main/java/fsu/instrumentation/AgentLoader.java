@@ -3,13 +3,11 @@
  */
 package fsu.instrumentation;
 
-import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
 
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
@@ -22,10 +20,6 @@ import org.apache.logging.log4j.Logger;
 
 public class AgentLoader {
     private static Logger LOGGER = LogManager.getLogger();
-
-    public String getGreeting() {
-        return "Hello World!";
-    }
 
     public static void main(String[] args) {
         //iterate all jvms and get the first one that matches our application name
@@ -45,29 +39,34 @@ public class AgentLoader {
         System.out.println("You choose JVM " + selectedVM.displayName() + " pid: " + selectedVM.id());
 
         try {
+            String agentJarPathStr;
+            try {
+                Path agentJarPath = Paths.get(HotPotAgent.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+                agentJarPathStr = agentJarPath.toAbsolutePath().toString();
+                LOGGER.info("Using agent jar [{}].", agentJarPathStr);
+            } catch (URISyntaxException e) {
+                LOGGER.error("Agent jar not found.", e);
+                return;
+            }
+
             String jvmPid = selectedVM.id();
             LOGGER.info("Attaching to target JVM with PID: " + jvmPid);
-            String agentFilePath = args[0];
-            String classToShow = args[1];
+
+            String configFilePath = args[0];
+
             VirtualMachine vm = VirtualMachine.attach(jvmPid);
-            vm.loadAgent(agentFilePath, classToShow);
+            vm.loadAgent(agentJarPathStr, configFilePath);
             vm.detach();
-            LOGGER.info("Attached to target JVM and loaded Java agent successfully");
+            LOGGER.info("Attached to target JVM and loaded HotPot agent successfully.");
         } catch (AttachNotSupportedException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            LOGGER.info("Target JVM did not support attach agent.", e);
         } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (RuntimeException e) {
-            e.printStackTrace();
+            LOGGER.info("Attached to target JVM and load HotPot agent failed.", e);
         } catch (AgentLoadException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            LOGGER.info("Could not load HotPot agent.", e);
         } catch (AgentInitializationException e) {
             LOGGER.error("Init Error", e);
             LOGGER.error("Return Code {}", e.returnValue());
         }
-        System.out.println(new AgentLoader().getGreeting());
     }
 }

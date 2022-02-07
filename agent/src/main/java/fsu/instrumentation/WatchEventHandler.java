@@ -2,8 +2,6 @@ package fsu.instrumentation;
 
 import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.WatchEvent;
 
@@ -14,20 +12,15 @@ public class WatchEventHandler {
         this.ts = transformerService;
     }
 
-    public void handle(Path watchedPath, WatchEvent<?> event) {
+    public void handle(Path watchablePath, WatchEvent<?> event) {
         if (ENTRY_MODIFY.equals(event.kind())) {
-            Path changed = (Path) event.context();
-            Path pathChanged = watchedPath.resolve(changed);
-            handlePath(pathChanged);
+            Path classFile = (Path) event.context();
+            Path classFilePath = watchablePath.resolve(classFile);
+            handleModified(classFilePath);
         }
     }
 
-    private void handlePath(Path changedClassFile) {
-        try {
-            byte[] byteCode = Files.readAllBytes(changedClassFile);
-            ts.swapClassFile(byteCode);
-        } catch (IOException e) {
-            Agent.LOGGER.error("Could not read class file " + changedClassFile + ".", e);
-        }
+    private void handleModified(Path classFile) {
+        ts.swapClassFile(classFile);
     }
 }

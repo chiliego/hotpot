@@ -1,13 +1,16 @@
 package fsu.instrumentation;
 
+import java.io.IOException;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.objectweb.asm.ClassReader;
 
-import fsu.asm.ClassNameAdapter;
+import fsu.instrumentation.asm.ClassNameAdapter;
 
 public class TransformerService {
     private static Logger LOGGER = LogManager.getLogger();
@@ -15,6 +18,15 @@ public class TransformerService {
 
     public TransformerService(Instrumentation inst) {
         this.inst = inst;
+    }
+
+    public void swapClassFile(Path classFile) {
+        try {
+            byte[] byteCode = Files.readAllBytes(classFile);
+            swapClassFile(byteCode);
+        } catch (IOException e) {
+            HotPotAgent.LOGGER.error("Could not read class file " + classFile + ".", e);
+        }
     }
 
     public void swapClassFile(byte[] byteCode) {

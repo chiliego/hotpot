@@ -22,6 +22,7 @@ dependencies {
 
     // This dependency is used by the application.
     implementation files("${System.getProperty('java.home')}/lib/jrt-fs.jar")
+    implementation project(path: ':agent', configuration: 'shadow')
 }
 
 application {

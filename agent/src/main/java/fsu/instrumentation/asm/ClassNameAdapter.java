@@ -1,4 +1,4 @@
-package fsu.asm;
+package fsu.instrumentation.asm;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
