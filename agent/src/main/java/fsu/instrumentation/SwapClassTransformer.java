@@ -15,7 +15,7 @@ public class SwapClassTransformer implements ClassFileTransformer {
     public SwapClassTransformer(Class<?> targetCls, byte[] byteCode) {
         this.targetCls = targetCls;
         this.byteCode = byteCode;
-        LOGGER.info("Class transformer for {}.", targetCls.getName());
+        LOGGER.info("Class transformer for [{}].", targetCls.getName());
     }
 
     @Override
