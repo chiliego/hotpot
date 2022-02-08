@@ -9,9 +9,9 @@ import java.nio.file.Paths;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import org.hotpot.agent.events.ConfigFileWatchEventHandler;
-import org.hotpot.agent.events.PathWatchService;
-import org.hotpot.agent.events.TransformerWatchEventHandler;
+import org.hotpot.events.ConfigFileWatchEventHandler;
+import org.hotpot.events.PathWatchService;
+import org.hotpot.events.TransformerWatchEventHandler;
 
 public class HotPotAgent {
     static Logger LOGGER = LogManager.getLogger();

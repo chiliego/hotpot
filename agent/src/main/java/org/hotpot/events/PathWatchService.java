@@ -1,4 +1,4 @@
-package org.hotpot.agent.events;
+package org.hotpot.events;
 
 import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
 

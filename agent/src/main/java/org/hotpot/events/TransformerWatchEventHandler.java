@@ -1,4 +1,4 @@
-package org.hotpot.agent.events;
+package org.hotpot.events;
 
 import java.nio.file.Path;
 

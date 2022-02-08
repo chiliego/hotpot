@@ -1,4 +1,4 @@
-package org.hotpot.agent.asm;
+package org.hotpot.asm;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
