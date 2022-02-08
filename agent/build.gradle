@@ -14,9 +14,9 @@ dependencies {
 
 jar {
     manifest {
-        attributes("Agent-Class": "fsu.instrumentation.HotPotAgent")
+        attributes("Agent-Class": "org.hotpot.instrumentation.HotPotAgent")
         attributes("Can-Redefine-Classes": "true")
         attributes("Can-Retransform-Classes": "true")
-        attributes("Premain-Class": "fsu.instrumentation.HotPotAgent")
+        attributes("Premain-Class": "org.hotpot.instrumentation.HotPotAgent")
     }
 }
