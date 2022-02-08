@@ -1,4 +1,4 @@
-package fsu.instrumentation.asm;
+package org.hotpot.agent.asm;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

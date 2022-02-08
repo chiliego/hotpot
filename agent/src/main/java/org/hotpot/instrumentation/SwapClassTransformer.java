@@ -1,4 +1,4 @@
-package fsu.instrumentation;
+package org.hotpot.instrumentation;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;

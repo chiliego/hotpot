@@ -1,4 +1,4 @@
-package fsu.instrumentation;
+package org.hotpot.agent.events;
 
 import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
 
@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,13 +17,13 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class WatchServiceRunner implements Runnable {
+public class PathWatchService implements Runnable {
     static Logger LOGGER = LogManager.getLogger();
-    private WatchEventHandler handler;
+    private PathWatchEventHandler handler;
     private WatchService watchService;
-    private Map<Path,WatchKey> watchablePathMap;
+    private Map<Path, WatchKey> watchablePathMap;
 
-    public WatchServiceRunner(WatchEventHandler handler) {
+    public PathWatchService(PathWatchEventHandler handler) {
         this.handler = handler;
         try {
             watchService = FileSystems.getDefault().newWatchService();
@@ -30,11 +32,15 @@ public class WatchServiceRunner implements Runnable {
         }
     }
 
-    public WatchServiceRunner(WatchEventHandler handler, List<Path> watchableDirs) {
+    public PathWatchService(PathWatchEventHandler handler, List<Path> watchableDirs) {
         this(handler);
         setWatchablePaths(watchableDirs);
     }
-    public WatchServiceRunner(WatchEventHandler handler, Path... watchablePath) {
+
+    public PathWatchService(PathWatchEventHandler handler, Path... watchablePaths) {
+        this(handler);
+        setWatchablePaths(watchablePaths);
+
     }
 
     @Override
@@ -43,8 +49,11 @@ public class WatchServiceRunner implements Runnable {
             WatchKey key;
             while ((key = watchService.take()) != null) {
                 for (WatchEvent<?> event : key.pollEvents()) {
-                    Path dir = (Path)key.watchable();
-                    handler.handle(dir, event);
+                    Path dir = (Path) key.watchable();
+                    if (ENTRY_MODIFY.equals(event.kind())) {
+                        Path path = dir.resolve((Path) event.context());
+                        handler.handleModified(path);
+                    }
                 }
                 key.reset();
             }
@@ -53,27 +62,36 @@ public class WatchServiceRunner implements Runnable {
         }
     }
 
-    private Map<Path,WatchKey> getWatchablePathMap() {
-        if(watchablePathMap == null) {
+    private Map<Path, WatchKey> getWatchablePathMap() {
+        if (watchablePathMap == null) {
             watchablePathMap = new HashMap<>();
         }
 
         return watchablePathMap;
     }
 
+    public void setWatchablePaths(Path... paths) {
+        List<Path> pathList = new ArrayList<>();
+        Collections.addAll(pathList, paths);
+        setWatchablePaths(pathList);
+    }
+
     public void setWatchablePaths(List<Path> paths) {
-        unregisterWatchable();
+        unregisterAllWatchable();
         addWatchablePaths(paths);
     }
 
-    private void unregisterWatchable() {
-        getWatchablePathMap().keySet().forEach(path -> {
-            WatchKey key = getWatchablePathMap().remove(path);
-            if(key != null) {
-                key.cancel();
-                LOGGER.info("Unregistered watchservice for [{}]", path);
-            }
-        });
+    private void unregisterAllWatchable() {
+        getWatchablePathMap().keySet()
+            .forEach(this::unregisterWatchable);
+    }
+
+    private void unregisterWatchable(Path path) {
+        WatchKey key = getWatchablePathMap().remove(path);
+        if (key != null) {
+            key.cancel();
+            LOGGER.info("Unregistered watchservice for [{}]", path);
+        }
     }
 
     public void addWatchablePaths(List<Path> paths) {
@@ -81,8 +99,8 @@ public class WatchServiceRunner implements Runnable {
             for (Path path : paths) {
                 if (!getWatchablePathMap().containsKey(path)) {
                     WatchKey key = path.toAbsolutePath().register(
-                        watchService,
-                        ENTRY_MODIFY);
+                            watchService,
+                            ENTRY_MODIFY);
                     getWatchablePathMap().put(path, key);
                 }
             }

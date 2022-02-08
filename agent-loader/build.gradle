@@ -27,5 +27,5 @@ dependencies {
 
 application {
     // Define the main class for the application.
-    mainClass = 'fsu.instrumentation.AgentLoader'
+    mainClass = 'org.hotpot.instrumentation.AgentLoader'
 }
