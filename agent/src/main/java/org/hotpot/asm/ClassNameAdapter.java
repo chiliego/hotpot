@@ -6,11 +6,11 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
 public class ClassNameAdapter extends ClassVisitor {
-    private static Logger LOGGER = LogManager.getLogger();
+    private static Logger LOGGER = LogManager.getLogger(ClassNameAdapter.class);
     private String className;
 
     public ClassNameAdapter() {
-        super(Opcodes.ASM4);
+        super(Opcodes.ASM8);
     }
 
     @Override
@@ -21,6 +21,6 @@ public class ClassNameAdapter extends ClassVisitor {
     }
 
     public String getClassName() {
-        return className.replace("/", ".");
+        return className;
     }
 }
