@@ -50,14 +50,15 @@ public class HotPotAgent {
         }
 
         LOGGER.info("Using config dir [{}].", configPath);
-        TransformerService ts = new TransformerService(inst);
-
-        ClassPathHandler classPathHandler = new ClassPathHandler();
-        classPathHandler.addClassPathHandler(ts::handle);
-        
         ClassPathConfHandler classPathConfHandler = new ClassPathConfHandler(configPath);
+        Path classPathConfFilePath = classPathConfHandler.getConfFilePath();
+        ClassPathHandler classPathHandler = new ClassPathHandler();
+        TransformerService ts = new TransformerService(inst, classPathConfFilePath);
+
         classPathConfHandler.addClassPathConsumer(classPathHandler::setClassPaths);
+        classPathHandler.addClassPathHandler(ts::handle);
         classPathConfHandler.init();
+
         
         PathWatchService pathWatchService = new PathWatchService();
         pathWatchService.addHandlers(classPathConfHandler, classPathHandler);
