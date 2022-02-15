@@ -1,20 +1,25 @@
 package org.hotpot.instrumentation;
 
 import java.io.IOException;
+import java.lang.instrument.ClassFileTransformer;
+import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
+import java.lang.instrument.UnmodifiableClassException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.security.ProtectionDomain;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
-import org.hotpot.events.ConfigFileWatchEventHandler;
+import org.hotpot.events.ClassPathConfHandler;
+import org.hotpot.events.ClassPathHandler;
 import org.hotpot.events.PathWatchService;
-import org.hotpot.events.TransformerWatchEventHandler;
+import org.hotpot.instrumentation.transformer.TransformerService;
 
 public class HotPotAgent {
-    static Logger LOGGER = LogManager.getLogger();
+    private static Logger LOGGER = LogManager.getLogger(HotPotAgent.class);
 
     public static void premain(String agentArgs, Instrumentation inst) {
         LOGGER.info("[HotPot] premain delegate to agentmain");
@@ -26,14 +31,14 @@ public class HotPotAgent {
 
         String configPathStr = agentArgs;
         Path configPath = null;
-        if(configPathStr != null){
+        if (configPathStr != null) {
             configPath = Paths.get(configPathStr);
         } else {
             String userHomeProp = System.getProperty("user.home");
             configPath = Paths.get(userHomeProp).resolve(".hotpot");
         }
 
-        if(!Files.isDirectory(configPath)) {
+        if (!Files.isDirectory(configPath)) {
             try {
                 Files.createDirectory(configPath);
                 LOGGER.info("Config dir [{}] created.", configPath);
@@ -43,18 +48,45 @@ public class HotPotAgent {
                 return;
             }
         }
-        
+
         LOGGER.info("Using config dir [{}].", configPath);
         TransformerService ts = new TransformerService(inst);
-        TransformerWatchEventHandler watchEventHandler = new TransformerWatchEventHandler(ts);
-        PathWatchService transformerWatchService = new PathWatchService(watchEventHandler);
-        ConfigFileWatchEventHandler configFileEventHandler = new ConfigFileWatchEventHandler(transformerWatchService);
-        PathWatchService configFileWatchServiceRunner = new PathWatchService(configFileEventHandler, configPath);
-        
-        configFileEventHandler.checkAndReadConfFile(configPath);
 
-        new Thread(transformerWatchService).start();
-        new Thread(configFileWatchServiceRunner).start();
+        ClassPathHandler classPathHandler = new ClassPathHandler();
+        classPathHandler.addClassPathHandler(ts::handle);
+        
+        ClassPathConfHandler classPathConfHandler = new ClassPathConfHandler(configPath);
+        classPathConfHandler.addClassPathConsumer(classPathHandler::setClassPaths);
+        classPathConfHandler.init();
+        
+        PathWatchService pathWatchService = new PathWatchService();
+        pathWatchService.addHandlers(classPathConfHandler, classPathHandler);
+
+        new Thread(pathWatchService).start();
+        //info(inst);
     }
 
+    public static void info(Instrumentation inst) {
+        ClassFileTransformer transformer = new InfoTransformer();
+        inst.addTransformer(transformer, true);
+
+    }
+
+    private static class InfoTransformer implements ClassFileTransformer {
+        @Override
+        public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
+                ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
+            try {
+                String loaderName = loader.getClass().getName();
+                String domain = protectionDomain.toString();
+
+                String msg = "class: [" + className + "] - [" + domain + "] - Loader: [" + loaderName + "]";
+                Files.write(Paths.get("/workspaces/agentTest/info.txt"), msg.getBytes(), StandardOpenOption.APPEND);
+            } catch (IOException e) {
+                // exception handling left as an exercise for the reader
+            }
+            return null;
+        }
+
+    }
 }

@@ -4,12 +4,12 @@ import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,29 +18,16 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 public class PathWatchService implements Runnable {
-    static Logger LOGGER = LogManager.getLogger();
-    private PathWatchEventHandler handler;
+    static Logger LOGGER = LogManager.getLogger(PathWatchService.class);
     private WatchService watchService;
-    private Map<Path, WatchKey> watchablePathMap;
+    private Map<PathWatchEventHandler, List<WatchablePath>> handlerPathsMap;
 
-    public PathWatchService(PathWatchEventHandler handler) {
-        this.handler = handler;
+    public PathWatchService() {
         try {
             watchService = FileSystems.getDefault().newWatchService();
         } catch (IOException e) {
             LOGGER.error("Coud not register watchservice.", e);
         }
-    }
-
-    public PathWatchService(PathWatchEventHandler handler, List<Path> watchableDirs) {
-        this(handler);
-        setWatchablePaths(watchableDirs);
-    }
-
-    public PathWatchService(PathWatchEventHandler handler, Path... watchablePaths) {
-        this(handler);
-        setWatchablePaths(watchablePaths);
-
     }
 
     @Override
@@ -52,7 +39,8 @@ public class PathWatchService implements Runnable {
                     Path dir = (Path) key.watchable();
                     if (ENTRY_MODIFY.equals(event.kind())) {
                         Path path = dir.resolve((Path) event.context());
-                        handler.handleModified(path);
+                        LOGGER.info("File modified [{}].", path);
+                        handleModified(path);
                     }
                 }
                 key.reset();
@@ -62,50 +50,111 @@ public class PathWatchService implements Runnable {
         }
     }
 
-    private Map<Path, WatchKey> getWatchablePathMap() {
-        if (watchablePathMap == null) {
-            watchablePathMap = new HashMap<>();
-        }
-
-        return watchablePathMap;
+    private void handleModified(Path path) {
+        getHandlerPathsMap().keySet()
+                .forEach(handler -> handler.handleModified(path));
     }
 
-    public void setWatchablePaths(Path... paths) {
-        List<Path> pathList = new ArrayList<>();
-        Collections.addAll(pathList, paths);
-        setWatchablePaths(pathList);
-    }
-
-    public void setWatchablePaths(List<Path> paths) {
-        unregisterAllWatchable();
-        addWatchablePaths(paths);
-    }
-
-    private void unregisterAllWatchable() {
-        getWatchablePathMap().keySet()
-            .forEach(this::unregisterWatchable);
-    }
-
-    private void unregisterWatchable(Path path) {
-        WatchKey key = getWatchablePathMap().remove(path);
-        if (key != null) {
-            key.cancel();
-            LOGGER.info("Unregistered watchservice for [{}]", path);
+    public void addHandlers(PathWatchEventHandler... handlers) {
+        for (PathWatchEventHandler handler : handlers) {
+            addHandler(handler);
+            handler.onChange(this::addHandler);
         }
     }
 
-    public void addWatchablePaths(List<Path> paths) {
-        try {
-            for (Path path : paths) {
-                if (!getWatchablePathMap().containsKey(path)) {
-                    WatchKey key = path.toAbsolutePath().register(
-                            watchService,
-                            ENTRY_MODIFY);
-                    getWatchablePathMap().put(path, key);
+    public Map<PathWatchEventHandler, List<WatchablePath>> getHandlerPathsMap() {
+        if (handlerPathsMap == null) {
+            handlerPathsMap = new HashMap<>();
+        }
+
+        return handlerPathsMap;
+    }
+
+    private void addHandler(PathWatchEventHandler handler) {
+        List<WatchablePath> watchablePaths = getWatchablePaths(handler);
+        List<WatchablePath> previousWatchablePaths = getHandlerPathsMap().put(handler, watchablePaths);
+
+        if (previousWatchablePaths != null) {
+            for (WatchablePath previousWatchablePath : previousWatchablePaths) {
+                if (!watchablePaths.contains(previousWatchablePath)) {
+                    LOGGER.info("Stop watching path [{}].", previousWatchablePath.getPath());
+                    previousWatchablePath.stopWatching();
                 }
             }
+        }
+    }
+
+    private List<WatchablePath> getWatchablePaths(PathWatchEventHandler handler) {
+        return toWatchablePaths(handler.getWatchablePaths());
+    }
+
+    private List<WatchablePath> toWatchablePaths(Path... paths) {
+        List<WatchablePath> watchablePathList = new ArrayList<>();
+        for (Path path : paths) {
+            try {
+                Files.walk(path)
+                        .filter(Files::isDirectory)
+                        .map(this::toWatchable)
+                        .filter(w -> w != null)
+                        .forEach(watchablePathList::add);
+            } catch (IOException e) {
+                LOGGER.error("Coud not register watchservice for path [{}].", path);
+                e.printStackTrace();
+            }
+        }
+
+        return watchablePathList;
+    }
+
+    private WatchablePath toWatchable(Path path) {
+        try {
+            WatchKey key = startWatching(path);
+            LOGGER.info("Start watching path [{}].", path);
+            return new WatchablePath(path, key);
         } catch (IOException e) {
-            LOGGER.error("Coud not register watchservice.", e);
+            LOGGER.error("Coud not register watchservice for path [{}].", path);
+            e.printStackTrace();
+        }
+
+        return null;
+    }
+
+    private WatchKey startWatching(Path path) throws IOException {
+        return path.toAbsolutePath().register(
+                watchService,
+                ENTRY_MODIFY);
+    }
+
+    private class WatchablePath {
+        private Path path;
+        private WatchKey key;
+
+        public WatchablePath(Path path, WatchKey key) {
+            this.path = path;
+            this.key = key;
+        }
+
+        public void stopWatching() {
+            key.cancel();
+        }
+
+        public Path getPath() {
+            return path;
+        }
+
+        public WatchKey getKey() {
+            return key;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj instanceof WatchablePath) {
+                WatchablePath otherWatchable = (WatchablePath) obj;
+                String otherAbsPath = otherWatchable.getPath().toAbsolutePath().toString();
+                return getPath().toAbsolutePath().toString().equals(otherAbsPath);
+            } else {
+                return false;
+            }
         }
     }
 }
