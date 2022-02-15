@@ -6,6 +6,7 @@ import java.util.function.UnaryOperator;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.commons.Method;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 public final class ASMUtils {
@@ -41,5 +42,9 @@ public final class ASMUtils {
         }
 
         return resultByteCode;
+    }
+
+    public static String getMethodDescriptor(java.lang.reflect.Method method) {
+        return Method.getMethod(method).getDescriptor();
     }
 }

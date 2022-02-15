@@ -2,64 +2,51 @@ package org.hotpot.instrumentation.transformer;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
+import java.nio.file.Path;
 import java.security.ProtectionDomain;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.UnaryOperator;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hotpot.asm.ASMUtils;
-import org.hotpot.asm.AddHelloLoggerMV;
-import org.hotpot.asm.MethodReplacer;
+import org.hotpot.asm.ModClassLoaderFindClass;
+import org.hotpot.asm.MethodModifier;
 import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.MethodVisitor;
 
 public class ClassLoaderTransformer implements ClassFileTransformer {
     private static Logger LOGGER = LogManager.getLogger(ClassLoaderTransformer.class);
-    private List<Class<?>> classLoaders;
+    private Path classPathConfFilePath;
     private Class<?> targetCls;
+    private String methodName;
+    private String methodDescriptor;
 
-    public ClassLoaderTransformer(Class<?> targetclassLoaderClass) {
+    public ClassLoaderTransformer(Path classPathConfFilePath, Class<?> targetclassLoaderClass, String methodName, String descriptor) {
+        this.classPathConfFilePath = classPathConfFilePath;
         this.targetCls = targetclassLoaderClass;
+        this.methodName = methodName;
+        this.methodDescriptor = descriptor;
     }
 
     @Override
     public byte[] transform(ClassLoader l, String name, Class<?> clazz, ProtectionDomain pd, byte[] b)
             throws IllegalClassFormatException {
-                
-            if(clazz.equals(targetCls)) {
-                String methodName = "loadClass";
-                LOGGER.info("Transform classloader [{}]", clazz.getName());
-                UnaryOperator<ClassVisitor> methodReplacer = cv -> new MethodReplacer(cv, n -> n.equals(methodName), AddHelloLoggerMV::new);
-                return ASMUtils.applyClassVisitor(b, methodReplacer, false);
-            }
+
+        if (clazz.equals(targetCls)) {
+            LOGGER.info("Transform classloader [{}]", clazz.getName());
+
+            UnaryOperator<ClassVisitor> methodReplacer = cv -> new MethodModifier(cv, methodName, methodDescriptor,
+                    createMethodAdapter(classPathConfFilePath));
+
+            return ASMUtils.applyClassVisitor(b, methodReplacer, false);
+        }
 
         return null;
     }
 
-    private boolean isClassLoader(Class<?> clazz) {
-        Class<?> superclass = clazz.getSuperclass();
-
-        if(superclass == null) {
-            return false;
-        } else if(superclass.equals(ClassLoader.class)) {
-            return true;
-        } else {
-            return isClassLoader(superclass);
-        }
-    }
-
-    public List<Class<?>> getClassLoaders() {
-        if (classLoaders == null) {
-            classLoaders = new ArrayList<>();
-        }
-
-        return classLoaders;
-    }
-
-    public Class<?>[] getClassLoaderArray() {
-        List<Class<?>> classLoaderList = getClassLoaders();
-
-        return classLoaderList.toArray(new Class<?>[classLoaderList.size()]);
+    private BiFunction<String, MethodVisitor, MethodVisitor> createMethodAdapter(Path classPathConfFilePath) {
+        String classPathConfFile = classPathConfFilePath.toAbsolutePath().toString();
+        return (owner, mv) -> new ModClassLoaderFindClass(owner, mv, classPathConfFile);
     }
 }
