@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -17,9 +18,11 @@ public class TransformerService {
     private static Logger LOGGER = LogManager.getLogger(TransformerService.class);
     private Instrumentation inst;
     private Set<Class<?>> classLoaders;
+    private Path classPathConfFilePath;
 
-    public TransformerService(Instrumentation inst) {
+    public TransformerService(Instrumentation inst, Path classPathConfFilePath) {
         this.inst = inst;
+        this.classPathConfFilePath = classPathConfFilePath;
         this.classLoaders = new HashSet<>();
     }
 
@@ -51,19 +54,25 @@ public class TransformerService {
         if (!classLoaders.contains(classLoaderClass)) {
             if (inst.isModifiableClass(classLoaderClass)) {
                 LOGGER.info("Transform classloader [{}] of class [{}].", classLoaderClass.getName(), className);
-                Class<?> targetclassLoaderClass = getSuperClassWithMethod(classLoaderClass, "loadClass", String.class,
-                boolean.class);
-                
-                if (targetclassLoaderClass == null) {
-                    LOGGER.error("Retransform classloader [{}] of class [{}] failed.", classLoaderClass.getName(), className);
+                String methodName = "loadClass";
+                ClassWithMethod classWithMethod = getSuperClassWithMethod(classLoaderClass, methodName, String.class,
+                        boolean.class);
+
+                if (classWithMethod == null) {
+                    LOGGER.error("Retransform classloader [{}] of class [{}] failed.", classLoaderClass.getName(),
+                            className);
                     return;
                 }
-                
-                ClassLoaderTransformer classLoaderTransformer = new ClassLoaderTransformer(targetclassLoaderClass);
+
+                Class<?> targetclassLoaderClass = classWithMethod.clazz;
+                String descriptor = ASMUtils.getMethodDescriptor(classWithMethod.method);
+
+                ClassLoaderTransformer classLoaderTransformer = new ClassLoaderTransformer(classPathConfFilePath,
+                        targetclassLoaderClass, methodName, descriptor);
                 transform(targetclassLoaderClass, classLoaderTransformer);
-                classLoaders.add(targetclassLoaderClass);
+                classLoaders.add(classLoaderClass);
             } else {
-                LOGGER.info("Transform classloader [{}] not modifiable.", className);
+                LOGGER.info("Transform classloader [{}] not modifiable.", classLoader.getName());
             }
         }
 
@@ -104,12 +113,12 @@ public class TransformerService {
         return null;
     }
 
-    private Class<?> getSuperClassWithMethod(Class<?> clazz, String methodName, Class<?>... parameterTypes) {
+    private ClassWithMethod getSuperClassWithMethod(Class<?> clazz, String methodName, Class<?>... parameterTypes) {
         String className = clazz.getName();
         try {
-            clazz.getDeclaredMethod(methodName, parameterTypes);
+            Method declaredMethod = clazz.getDeclaredMethod(methodName, parameterTypes);
             LOGGER.info("Class [{}] allready has method {}({})", clazz.getName(), methodName, parameterTypes);
-            return clazz;
+            return new ClassWithMethod(clazz, declaredMethod);
         } catch (NoSuchMethodException e) {
             Class<?> superclass = clazz.getSuperclass();
             if (superclass == null) {
@@ -125,6 +134,16 @@ public class TransformerService {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private class ClassWithMethod {
+        Class<?> clazz;
+        Method method;
+
+        public ClassWithMethod(Class<?> clazz, Method method) {
+            this.clazz = clazz;
+            this.method = method;
+        }
     }
 
 }

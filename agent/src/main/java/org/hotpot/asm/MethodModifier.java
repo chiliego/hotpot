@@ -4,21 +4,25 @@ import static org.objectweb.asm.Opcodes.ACC_INTERFACE;
 import static org.objectweb.asm.Opcodes.ASM8;
 
 import java.util.function.BiFunction;
-import java.util.function.Predicate;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 
-public class MethodReplacer extends ClassVisitor{
+public class MethodModifier extends ClassVisitor{
+    private static Logger LOGGER = LogManager.getLogger(MethodModifier.class);
 
-    private Predicate<String> methodName;
+    private String methodName;
     private BiFunction<String, MethodVisitor, MethodVisitor> targetMv;
     private String owner;
     private boolean isInterface;
+    private String methodDescriptor;
 
-    public MethodReplacer(ClassVisitor classVisitor, Predicate<String> methodName, BiFunction<String, MethodVisitor, MethodVisitor> mv) {
+    public MethodModifier(ClassVisitor classVisitor, String name, String descriptor, BiFunction<String, MethodVisitor, MethodVisitor> mv) {
         super(ASM8, classVisitor);
-        this.methodName = methodName;
+        this.methodName = name;
+        this.methodDescriptor = descriptor;
         this.targetMv = mv;
     }
     
@@ -34,7 +38,8 @@ public class MethodReplacer extends ClassVisitor{
             String[] exceptions) {
         MethodVisitor mv = cv.visitMethod(access, name, descriptor, signature, exceptions);
 
-        if (!isInterface && mv != null && methodName.test(name)) {
+        if (!isInterface && mv != null && methodName.equals(name) && methodDescriptor.equals(descriptor)) {
+            LOGGER.info("Modifiy method [{}].[{}] [{}]", owner, name, descriptor);
             mv = this.targetMv.apply(owner, mv);
         }
 
