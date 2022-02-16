@@ -5,6 +5,8 @@ import java.util.function.Consumer;
 
 public interface PathWatchEventHandler {
     public Path[] getWatchablePaths();
+    public void handleCreated(Path path);
     public void handleModified(Path path);
+    public void handleDeleted(Path path);
     public void onChange(Consumer<PathWatchEventHandler> changeHandler);
 }

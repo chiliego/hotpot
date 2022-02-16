@@ -25,14 +25,25 @@ public class ClassPathHandler implements PathWatchEventHandler {
     }
 
     @Override
+    public void handleCreated(Path path) {
+        handleModified(path);
+    }
+
+    
+    @Override
     public void handleModified(Path path) {
         if (isInClassPaths(path)) {
             for (Consumer<Path> classpathHandler : classpathHandlers) {
                 classpathHandler.accept(path);
             }
         } else {
-
+            
         }
+    }
+
+    @Override
+    public void handleDeleted(Path path) {
+        // TODO Auto-generated method stub
     }
 
     private boolean isInClassPaths(Path path) {
@@ -59,5 +70,7 @@ public class ClassPathHandler implements PathWatchEventHandler {
         this.changeHandler = changeHandler;
         
     }
+
+    
     
 }
