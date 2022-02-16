@@ -27,7 +27,7 @@ public class TransformerService {
     }
 
     public void handle(Path modifiedClassFile) {
-        if (!modifiedClassFile.getFileName().toString().endsWith(".class")) {
+        if (!Files.isRegularFile(modifiedClassFile) && !modifiedClassFile.getFileName().toString().endsWith(".class")) {
             LOGGER.warn("[{}] may be not a class file.", modifiedClassFile);
             return;
         }

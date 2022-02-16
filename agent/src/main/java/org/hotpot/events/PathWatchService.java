@@ -1,6 +1,6 @@
 package org.hotpot.events;
 
-import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
+import static java.nio.file.StandardWatchEventKinds.*;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -37,8 +38,12 @@ public class PathWatchService implements Runnable {
             while ((key = watchService.take()) != null) {
                 for (WatchEvent<?> event : key.pollEvents()) {
                     Path dir = (Path) key.watchable();
-                    if (ENTRY_MODIFY.equals(event.kind())) {
-                        Path path = dir.resolve((Path) event.context());
+                    Path path = dir.resolve((Path) event.context());
+                    
+                    if (ENTRY_CREATE.equals(event.kind())) {
+                        LOGGER.info("File created [{}].", path);
+                        handleCreated(path);
+                    } else if (ENTRY_MODIFY.equals(event.kind())) {
                         LOGGER.info("File modified [{}].", path);
                         handleModified(path);
                     }
@@ -50,9 +55,21 @@ public class PathWatchService implements Runnable {
         }
     }
 
+    private void handleCreated(Path path) {
+        callHandler(handler -> handler.handleCreated(path));
+    }
+
     private void handleModified(Path path) {
+        callHandler(handler -> handler.handleModified(path));
+    }
+
+    private void handleDeleted(Path path) {
+        callHandler(handler -> handler.handleDeleted(path));
+    }
+
+    private void callHandler(Consumer<? super PathWatchEventHandler> action) {
         getHandlerPathsMap().keySet()
-                .forEach(handler -> handler.handleModified(path));
+                .forEach(action);
     }
 
     public void addHandlers(PathWatchEventHandler... handlers) {
@@ -122,7 +139,9 @@ public class PathWatchService implements Runnable {
     private WatchKey startWatching(Path path) throws IOException {
         return path.toAbsolutePath().register(
                 watchService,
-                ENTRY_MODIFY);
+                ENTRY_CREATE,
+                ENTRY_MODIFY,
+                ENTRY_DELETE);
     }
 
     private class WatchablePath {

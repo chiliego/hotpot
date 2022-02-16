@@ -31,6 +31,11 @@ public class ClassPathConfHandler implements PathWatchEventHandler{
     }
 
     @Override
+    public void handleCreated(Path path) {
+        handleModified(path);
+    }
+
+    @Override
     public void handleModified(Path classPathConf) {
         if (isSupportedFile(classPathConf)) {
             if (!Files.exists(classPathConf)) {
@@ -67,6 +72,11 @@ public class ClassPathConfHandler implements PathWatchEventHandler{
         }
     }
 
+    @Override
+    public void handleDeleted(Path path) {
+        // TODO Auto-generated method stub
+    }
+
     public void addClassPathConsumer(Consumer<Path[]> consumer) {
         classPathConsumers.add(consumer);
     }
@@ -88,4 +98,6 @@ public class ClassPathConfHandler implements PathWatchEventHandler{
     public void init() {
         handleModified(getConfFilePath());
     }
+
+    
 }
