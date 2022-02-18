@@ -10,8 +10,8 @@ import org.apache.logging.log4j.Logger;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 
-public class MethodModifier extends ClassVisitor{
-    private static Logger LOGGER = LogManager.getLogger(MethodModifier.class);
+public class ModMethodAdapter extends ClassVisitor{
+    private static Logger LOGGER = LogManager.getLogger(ModMethodAdapter.class);
 
     private String methodName;
     private BiFunction<String, MethodVisitor, MethodVisitor> targetMv;
@@ -19,7 +19,7 @@ public class MethodModifier extends ClassVisitor{
     private boolean isInterface;
     private String methodDescriptor;
 
-    public MethodModifier(ClassVisitor classVisitor, String name, String descriptor, BiFunction<String, MethodVisitor, MethodVisitor> mv) {
+    public ModMethodAdapter(ClassVisitor classVisitor, String name, String descriptor, BiFunction<String, MethodVisitor, MethodVisitor> mv) {
         super(ASM8, classVisitor);
         this.methodName = name;
         this.methodDescriptor = descriptor;

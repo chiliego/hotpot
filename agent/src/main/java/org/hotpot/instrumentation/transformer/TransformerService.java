@@ -1,100 +1,235 @@
 package org.hotpot.instrumentation.transformer;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hotpot.asm.ASMUtils;
+import org.hotpot.instrumentation.helper.ModifiedClass;
 
 public class TransformerService {
     private static Logger LOGGER = LogManager.getLogger(TransformerService.class);
     private Instrumentation inst;
-    private Set<Class<?>> classLoaders;
+    private Set<ClassLoader> classLoaders;
     private Path classPathConfFilePath;
+    private Map<String, ModifiedClass> modifiedClasses;
 
     public TransformerService(Instrumentation inst, Path classPathConfFilePath) {
         this.inst = inst;
         this.classPathConfFilePath = classPathConfFilePath;
         this.classLoaders = new HashSet<>();
+        this.modifiedClasses = new HashMap<>();
     }
 
     public void handle(Path modifiedClassFile) {
-        if (!Files.isRegularFile(modifiedClassFile) && !modifiedClassFile.getFileName().toString().endsWith(".class")) {
-            LOGGER.warn("[{}] may be not a class file.", modifiedClassFile);
+        if (!Files.isRegularFile(modifiedClassFile) || !modifiedClassFile.getFileName().toString().endsWith(".class")) {
+            LOGGER.warn("[{}] may be not a class file or does not exist.", modifiedClassFile);
             return;
         }
 
         try {
-            byte[] byteCode = Files.readAllBytes(modifiedClassFile);
-            handle(byteCode);
+            ModifiedClass modifiedClass = createModClass(modifiedClassFile);
+            handle(modifiedClass);
         } catch (IOException e) {
             LOGGER.error("Could not read class file " + modifiedClassFile + ".", e);
         }
     }
 
-    public void handle(byte[] modifiedByteCode) {
-        String className = ASMUtils.getClassName(modifiedByteCode);
-        Class<?> targetCls = getClass(className);
+    private ModifiedClass createModClass(Path modifiedClassFile) throws IOException {
+        byte[] byteCode = Files.readAllBytes(modifiedClassFile);
+        ModifiedClass modifiedClass = new ModifiedClass(byteCode, modifiedClassFile);
+        collectClassInfo(modifiedClass);
+        return modifiedClass;
+    }
 
-        if (targetCls == null) {
-            LOGGER.info("Could not get class [{}], retransform failed.", className);
+    private void collectClassInfo(ModifiedClass modifiedClass) {
+        String modifiedClassName = modifiedClass.getName();
+        InputStream origClassIS = ClassLoader
+                            .getSystemResourceAsStream(modifiedClassName.replace(".", "/") + ".class");
+        boolean classExists = origClassIS != null;
+
+        modifiedClass.setClassExist(classExists);
+
+        if(!classExists) {
             return;
         }
 
-        ClassLoader classLoader = targetCls.getClassLoader();
+        Class<?>[] initiatedClasses = inst.getAllLoadedClasses();
+        for (Class<?> clazz : initiatedClasses) {
+            String initiatedClassName = clazz.getName();
+            boolean isModifiableClass = inst.isModifiableClass(clazz);
+            boolean modClassAllreadyLoaded = initiatedClassName.equals(modifiedClassName);
+
+            if (isModifiableClass && modClassAllreadyLoaded) {
+                modifiedClass.setModifiable(isModifiableClass);
+                modifiedClass.setLoadedClass(clazz);
+            } else if (isModifiableClass && !modClassAllreadyLoaded) {
+                ClassLoader loader = clazz.getClassLoader();
+                if (loader != null) {
+                    InputStream classIS = ClassLoader
+                            .getSystemResourceAsStream(initiatedClassName.replace(".", "/") + ".class");
+
+                    boolean hasReference = ASMUtils.hasReference(classIS, modifiedClassName);
+                    if (hasReference && inst.isModifiableClass(clazz)) {
+                        LOGGER.info("Class [{}] has reference to [{}]", clazz.getName(), modifiedClassName);
+                        modifiedClass.addClassWithRef(clazz);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * <ol>
+     *  <li>
+     *      newly created Class, not exist at runtime
+     *  </li>
+     *  <li>
+     *      modified class, class not loaded by classloader -> load from class file
+     *  </li>
+     *  <li>
+     *      modified class, class allready loaded by classloader
+     *      <ul>
+     *          <li>
+     *              only modified method body -> swap bytecode
+     *          </li>
+     *          <li> 
+     *              add, remove or rename fields or methods, change the signatures of
+     *              methods, or change inheritance -> subclassing and change references
+     *          </li>
+     *      </ul>
+     *  </li>
+     * </ol>
+     * 
+     * @param modifiedClass
+     */
+    public void handle(ModifiedClass modifiedClass) {
+        String modifiedClassName = modifiedClass.getName();
+        Class<?> loadedClass = modifiedClass.getLoadedClass();
+
+        if (loadedClass == null) {
+            LOGGER.info("Class [{}] not loaded, no retransformation.", modifiedClassName);
+            try {
+                Class.forName(modifiedClassName);
+                ModifiedClass removeModifiedClass = modifiedClasses.remove(modifiedClassName);
+                if (removeModifiedClass != null) {
+                    try {
+                        Files.delete(removeModifiedClass.getClassFilePath());
+                    } catch (IOException e) {
+                        LOGGER.error("Delete modified class file [{}] failed.", removeModifiedClass.getClassFilePath());
+                        e.printStackTrace();
+                    }
+                }
+
+                /* if(!modifiedClass.classExists()) {
+                    return;
+                } */
+            } catch (ClassNotFoundException e) {
+                LOGGER.info("Get class [{}] with Class.forName failed.", modifiedClassName);
+            }
+            return;
+        }
+
+        ClassLoader classLoader = loadedClass.getClassLoader();
+        LOGGER.info("get classloader {} from {}", classLoader.getName(), loadedClass.getName());
         Class<? extends ClassLoader> classLoaderClass = classLoader.getClass();
         if (!classLoaders.contains(classLoaderClass)) {
             if (inst.isModifiableClass(classLoaderClass)) {
-                LOGGER.info("Transform classloader [{}] of class [{}].", classLoaderClass.getName(), className);
+                LOGGER.info("Transform classloader [{}] of class [{}].", classLoaderClass.getName(), modifiedClassName);
                 String methodName = "loadClass";
-                ClassWithMethod classWithMethod = getSuperClassWithMethod(classLoaderClass, methodName, String.class,
-                        boolean.class);
+                ClassLoaderWithMethod classLoaderWithMethod = getClassLoaderWithMethod(classLoader, methodName,
+                        String.class, boolean.class);
 
-                if (classWithMethod == null) {
+                if (classLoaderWithMethod == null) {
                     LOGGER.error("Retransform classloader [{}] of class [{}] failed.", classLoaderClass.getName(),
-                            className);
+                            modifiedClassName);
                     return;
                 }
 
-                Class<?> targetclassLoaderClass = classWithMethod.clazz;
-                String descriptor = ASMUtils.getMethodDescriptor(classWithMethod.method);
+                Class<?> targetclassLoaderClass = classLoaderWithMethod.classloader.getClass();
+                String descriptor = ASMUtils.getMethodDescriptor(classLoaderWithMethod.method);
 
                 ClassLoaderTransformer classLoaderTransformer = new ClassLoaderTransformer(classPathConfFilePath,
                         targetclassLoaderClass, methodName, descriptor);
-                transform(targetclassLoaderClass, classLoaderTransformer);
-                classLoaders.add(classLoaderClass);
+                transform(classLoaderTransformer, targetclassLoaderClass);
+                classLoaders.add(classLoaderWithMethod.classloader);
+                // classLoaders.add(classLoaderWithMethod.classloader);
             } else {
                 LOGGER.info("Transform classloader [{}] not modifiable.", classLoader.getName());
             }
         }
 
-        SwapClassTransformer transformer = new SwapClassTransformer(targetCls, modifiedByteCode);
-        transform(targetCls, transformer);
+        ClassTransformer classTransformer = new ClassTransformer(modifiedClass);
+        transform(classTransformer, loadedClass);
+        ModifiedClass subClass = classTransformer.getSubClass();
+
+        if (subClass != null) {
+            // method changed
+            String subClassName = subClass.getName();
+            Path subClassFilePath = subClass.getClassFilePath();
+            byte[] subClassByteCode = subClass.getByteCode();
+            LOGGER.info("Subclass [{}] saved to file [{}].", subClassName, subClassFilePath);
+            // deletes subclass file after loaded by Classloader
+            // find all classes with reference to class
+            // reset reference from class to subclass
+            ClassReferenceTransformer classReferenceTransformer = new ClassReferenceTransformer(modifiedClassName,
+                    subClassName);
+
+            transform(classReferenceTransformer, modifiedClass.getClassesWithRef());
+
+            try {
+                Files.write(subClassFilePath, subClassByteCode);
+                modifiedClasses.put(subClassName, subClass);
+            } catch (IOException e) {
+                LOGGER.error("Save subclass [{}] to file [{}] failed.", subClassName, subClassFilePath);
+                e.printStackTrace();
+            }
+        }
+
+        /*
+         * Class[] initiatedClasses = inst.getInitiatedClasses(classLoader);
+         * Path logFile =
+         * classPathConfFilePath.getParent().resolve("initiatedClasses.txt");
+         * 
+         * try {
+         * if(!Files.exists(logFile)) {
+         * Files.createFile(logFile);
+         * }
+         * FileWriter fileWriter = new FileWriter(logFile.toFile(), true);
+         * for (Class initiatedClass : initiatedClasses) {
+         * fileWriter.write(initiatedClass.getName()+"\n");
+         * }
+         * } catch (IOException e) {
+         * // TODO Auto-generated catch block
+         * e.printStackTrace();
+         * }
+         */
     }
 
-    private void transform(Class<?> targetCls, ClassFileTransformer transformer) {
+    private void transform(ClassFileTransformer transformer, Class<?>... targetCls) {
         inst.addTransformer(transformer, true);
-        String className = targetCls.getName();
+        // String className = targetCls.getName();
         try {
-            LOGGER.info("Retransform [{}].", targetCls);
             inst.retransformClasses(targetCls);
         } catch (UnmodifiableClassException e) {
-            LOGGER.error("Can not retransform class [{}].", className);
             LOGGER.error(e);
         } finally {
             inst.removeTransformer(transformer);
         }
     }
 
-    public Class<?> getClass(String className) {
+    public Class<?> getLoadedClass(String className) {
         LOGGER.info("Try get class [{}] with Class.forName...", className);
         try {
             return Class.forName(className);
@@ -113,37 +248,40 @@ public class TransformerService {
         return null;
     }
 
-    private ClassWithMethod getSuperClassWithMethod(Class<?> clazz, String methodName, Class<?>... parameterTypes) {
-        String className = clazz.getName();
+    private ClassLoaderWithMethod getClassLoaderWithMethod(ClassLoader classloader, String methodName,
+            Class<?>... parameterTypes) {
+        Class<? extends ClassLoader> classloaderClass = classloader.getClass();
         try {
-            Method declaredMethod = clazz.getDeclaredMethod(methodName, parameterTypes);
-            LOGGER.info("Class [{}] allready has method {}({})", clazz.getName(), methodName, parameterTypes);
-            return new ClassWithMethod(clazz, declaredMethod);
+            Method declaredMethod = classloaderClass.getDeclaredMethod(methodName, parameterTypes);
+            LOGGER.info("Class [{}] allready has method {}({})", classloaderClass.getName(), methodName,
+                    parameterTypes);
+            return new ClassLoaderWithMethod(classloader, declaredMethod);
         } catch (NoSuchMethodException e) {
-            Class<?> superclass = clazz.getSuperclass();
-            if (superclass == null) {
-                LOGGER.error("No superclass of [{}] found to check for method [{}].", className, methodName);
+            ClassLoader parentClassloader = classloader.getParent();
+            if (parentClassloader == null) {
+                LOGGER.error("Reach bootstraploader from {}({}).", classloaderClass.getName(), methodName,
+                        parameterTypes);
                 return null;
             }
 
-            LOGGER.info("Try get method {}({}) from superclass [{}] of [{}]", methodName, parameterTypes,
-                    superclass.getName(), className);
-            return getSuperClassWithMethod(superclass, methodName, parameterTypes);
+            LOGGER.info("Try get method {}({}) from parent classloader [{}] of [{}]", methodName, parameterTypes,
+                    parentClassloader.getName(), classloader.getName());
+            return getClassLoaderWithMethod(parentClassloader, methodName, parameterTypes);
         } catch (SecurityException e) {
-            LOGGER.error("Could not get method [{}] of class [{}].", methodName, className);
+            LOGGER.error("In class [{}] exist no method {}({}).", classloader.getName(), methodName, parameterTypes);
             e.printStackTrace();
         }
+
         return null;
     }
 
-    private class ClassWithMethod {
-        Class<?> clazz;
+    private class ClassLoaderWithMethod {
+        ClassLoader classloader;
         Method method;
 
-        public ClassWithMethod(Class<?> clazz, Method method) {
-            this.clazz = clazz;
+        public ClassLoaderWithMethod(ClassLoader classloader, Method method) {
+            this.classloader = classloader;
             this.method = method;
         }
     }
-
 }

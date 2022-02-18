@@ -10,8 +10,8 @@ import java.util.function.UnaryOperator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hotpot.asm.ASMUtils;
-import org.hotpot.asm.ModClassLoaderFindClass;
-import org.hotpot.asm.MethodModifier;
+import org.hotpot.asm.ModClassLoaderAdapter;
+import org.hotpot.asm.ModMethodAdapter;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 
@@ -36,7 +36,7 @@ public class ClassLoaderTransformer implements ClassFileTransformer {
         if (clazz.equals(targetCls)) {
             LOGGER.info("Transform classloader [{}]", clazz.getName());
 
-            UnaryOperator<ClassVisitor> methodReplacer = cv -> new MethodModifier(cv, methodName, methodDescriptor,
+            UnaryOperator<ClassVisitor> methodReplacer = cv -> new ModMethodAdapter(cv, methodName, methodDescriptor,
                     createMethodAdapter(classPathConfFilePath));
 
             return ASMUtils.applyClassVisitor(b, methodReplacer, false);
@@ -47,6 +47,6 @@ public class ClassLoaderTransformer implements ClassFileTransformer {
 
     private BiFunction<String, MethodVisitor, MethodVisitor> createMethodAdapter(Path classPathConfFilePath) {
         String classPathConfFile = classPathConfFilePath.toAbsolutePath().toString();
-        return (owner, mv) -> new ModClassLoaderFindClass(owner, mv, classPathConfFile);
+        return (owner, mv) -> new ModClassLoaderAdapter(owner, mv, classPathConfFile);
     }
 }

@@ -9,6 +9,7 @@ public class ClassPathHandler implements PathWatchEventHandler {
     private Path[] classPaths;
     private List<Consumer<Path>> classpathHandlers;
     private Consumer<PathWatchEventHandler> changeHandler = h -> {};
+    private Consumer<PathWatchEventHandler> modifyHandler;
 
     public ClassPathHandler() {
         this(new Path[0]);
