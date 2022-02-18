@@ -30,11 +30,11 @@ import static org.objectweb.asm.Opcodes.MONITOREXIT;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 
-public class ModClassLoaderFindClass extends MethodVisitor {
+public class ModClassLoaderAdapter extends MethodVisitor {
     private String owner;
     private String pathToConfFile;
 
-    public ModClassLoaderFindClass(String owner, MethodVisitor mv, String classPathConfFile) {
+    public ModClassLoaderAdapter(String owner, MethodVisitor mv, String classPathConfFile) {
         super(ASM8, mv);
         this.owner = owner;
         this.pathToConfFile = classPathConfFile;

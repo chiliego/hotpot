@@ -41,10 +41,13 @@ public class PathWatchService implements Runnable {
                     Path path = dir.resolve((Path) event.context());
                     
                     if (ENTRY_CREATE.equals(event.kind())) {
-                        LOGGER.info("File created [{}].", path);
+                        LOGGER.info("Handle file created [{}].", path);
                         handleCreated(path);
                     } else if (ENTRY_MODIFY.equals(event.kind())) {
-                        LOGGER.info("File modified [{}].", path);
+                        LOGGER.info("Handle file modified [{}].", path);
+                        handleModified(path);
+                    } else if (ENTRY_DELETE.equals(event.kind())) {
+                        LOGGER.info("Handle file deleted [{}].", path);
                         handleModified(path);
                     }
                 }

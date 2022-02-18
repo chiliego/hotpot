@@ -1,6 +1,10 @@
 package org.hotpot.asm;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
+import java.util.Collections;
+import java.util.List;
 import java.util.function.UnaryOperator;
 
 import org.objectweb.asm.ClassReader;
@@ -29,6 +33,36 @@ public final class ASMUtils {
         ClassNameAdapter classNameAdapter = new ClassNameAdapter();
         classReader.accept(classNameAdapter, 0);
         return classNameAdapter.getClassName();
+    }
+
+    public static boolean hasReference(InputStream classIS, String toClass) {
+        try {
+            ClassReader classReader = new ClassReader(classIS);
+            ClassRefAdapter classRefAdapter = new ClassRefAdapter(toClass);
+            classReader.accept(classRefAdapter, 0);
+            return classRefAdapter.hasRef();
+        } catch (IOException e) {
+            //e.printStackTrace();
+        }
+
+        return false;
+    }
+
+    public static List<String> getMethods(byte[] byteCode) {
+        ClassReader classReader = new ClassReader(byteCode);
+        MethodListAdapter methodListAdapter = new MethodListAdapter();
+        classReader.accept(methodListAdapter, 0);
+        return methodListAdapter.getMethodList();
+    }
+
+    public static boolean onlyChangeMethodBody(byte[] origBytecode, byte[] modifiedBytecode) {
+        List<String> origMethods = getMethods(origBytecode);
+        List<String> modifiedMethods = getMethods(modifiedBytecode);
+
+        Collections.sort(origMethods);
+        Collections.sort(modifiedMethods);
+
+        return origMethods.equals(modifiedMethods);
     }
 
     public static byte[] applyClassVisitor(byte[] byteCode, UnaryOperator<ClassVisitor> cvFunc, boolean printByteCode) {
