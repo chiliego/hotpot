@@ -23,7 +23,10 @@ public class MethodListAdapter extends ClassVisitor {
     @Override
     public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
             String[] exceptions) {
-        String method = access+name+descriptor+signature;
+        if(name.startsWith("lambda")) {
+            name = "lambda";
+        }
+        String method = access+"-"+name+"-"+descriptor+"-"+signature;
         methodList.add(method);
         return null;
     }

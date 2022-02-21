@@ -14,6 +14,9 @@ public class ModifiedClass {
     private Class<?> loadedClass;
     private ArrayList<Class<?>> classesWithReference;
     private boolean classExists;
+    private ClassLoader classloader;
+    private String superName;
+    private boolean isSubClass;
 
     public ModifiedClass(String name, byte[] byteCode, Path classFilePath) {
         this.nameInternal = name;
@@ -21,6 +24,7 @@ public class ModifiedClass {
         this.byteCode = byteCode;
         this.classFilePath = classFilePath;
         this.isModifiable = true;
+        this.isSubClass = false;
         this.classesWithReference = new ArrayList<>();
     }
 
@@ -50,6 +54,7 @@ public class ModifiedClass {
 
     public void setLoadedClass(Class<?> clazz) {
         this.loadedClass = clazz;
+        setClassloader(clazz.getClassLoader());
     }
 
     public Class<?>[] getClassesWithRef() {
@@ -57,6 +62,10 @@ public class ModifiedClass {
     }
 
     public void addClassWithRef(Class<?> clazz) {
+        if(getClassloader() == null) {
+            setClassloader(clazz.getClassLoader());
+        }
+
         classesWithReference.add(clazz);
     }
 
@@ -73,5 +82,29 @@ public class ModifiedClass {
 
     public void setClassExist(boolean classExists) {
         this.classExists = classExists;
+    }
+
+    public ClassLoader getClassloader() {
+        return classloader;
+    }
+
+    public void setClassloader(ClassLoader classloader) {
+        this.classloader = classloader;
+    }
+
+    public boolean isSubclass() {
+        return isSubClass;
+    }
+
+    public String getSuperName() {
+        return superName;
+    }
+
+    public void makeSubclass(String subClassName, byte[] subClassByteCode, Path subClassFilePath) {
+        this.isSubClass = true;
+        this.superName = this.name;
+        this.name = subClassName;
+        this.byteCode = subClassByteCode;
+        this.classFilePath = subClassFilePath;
     }
 }

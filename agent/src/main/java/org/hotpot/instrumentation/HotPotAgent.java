@@ -15,6 +15,7 @@ import org.apache.logging.log4j.Logger;
 import org.hotpot.events.ClassPathConfHandler;
 import org.hotpot.events.ClassPathHandler;
 import org.hotpot.events.PathWatchService;
+import org.hotpot.instrumentation.helper.ClassLoaderUtil;
 import org.hotpot.instrumentation.transformer.TransformerService;
 
 public class HotPotAgent {
@@ -27,6 +28,21 @@ public class HotPotAgent {
 
     public static void agentmain(String agentArgs, Instrumentation inst) {
         LOGGER.info("[HotPot] agentmain");
+
+        // exp
+        ClassLoaderUtil classLoaderUtil = new ClassLoaderUtil(inst::getAllLoadedClasses, inst::isModifiableClass);
+        String className = "fsu.jportal.mets.JPMetsHierarchyGenerator";
+
+        try {
+            ClassLoader classLoader = classLoaderUtil.getClassLoader(className);
+            LOGGER.info("[HotPot] Found classloader [{}] for class [{}]", classLoader.getClass().getName(), className);
+            classLoader.loadClass(className);
+        } catch (IOException e1) {
+            LOGGER.error("[HotPot] No classloader found for class [{}]", className);
+        } catch (ClassNotFoundException e) {
+            LOGGER.error("[HotPot] class not found [{}]", className);
+        }
+        // exp
 
         String configPathStr = agentArgs;
         Path configPath = null;
@@ -58,7 +74,6 @@ public class HotPotAgent {
         classPathHandler.addClassPathHandler(ts::handle);
         classPathConfHandler.init();
 
-        
         PathWatchService pathWatchService = new PathWatchService();
         pathWatchService.addHandlers(classPathConfHandler, classPathHandler);
 

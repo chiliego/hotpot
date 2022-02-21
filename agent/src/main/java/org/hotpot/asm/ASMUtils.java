@@ -36,7 +36,7 @@ public final class ASMUtils {
     }
 
     public static boolean hasReference(InputStream classIS, String toClass) {
-        try {
+        try(classIS) {
             ClassReader classReader = new ClassReader(classIS);
             ClassRefAdapter classRefAdapter = new ClassRefAdapter(toClass);
             classReader.accept(classRefAdapter, 0);

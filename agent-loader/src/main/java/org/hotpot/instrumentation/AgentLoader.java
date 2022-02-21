@@ -28,7 +28,7 @@ public class AgentLoader {
 
         for (int i = 0; i < vmCount; i++) {
             VirtualMachineDescriptor vm = vmList.get(i);
-            String vmDisplayName = vm .displayName();
+            String vmDisplayName = vm.displayName();
             String pid = vm.id();
             System.out.println("["+ i + "] " + vmDisplayName + " pid: " + pid);
         }
