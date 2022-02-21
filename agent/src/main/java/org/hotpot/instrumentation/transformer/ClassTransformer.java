@@ -18,7 +18,6 @@ import org.objectweb.asm.util.CheckClassAdapter;
 public class ClassTransformer implements ClassFileTransformer {
     private static Logger LOGGER = LogManager.getLogger(ClassTransformer.class);
     private ModifiedClass modifiedClass;
-    private ModifiedClass subClass;
 
     public ClassTransformer(ModifiedClass modifiedClass) {
         this.modifiedClass = modifiedClass;
@@ -33,21 +32,20 @@ public class ClassTransformer implements ClassFileTransformer {
                 return modifiedClass.getByteCode();
             }
 
-            subClass = newSubClass();
+            makeSubClass();
         } else {
             LOGGER.error("No byte code swapping for class [{}].", name);
+            Thread.dumpStack();
         }
 
-        return null;
+        return b;
     }
 
-    
-
-    public ModifiedClass getSubClass() {
-        return subClass;
+    public ModifiedClass getModClass() {
+        return modifiedClass;
     }
 
-    private ModifiedClass newSubClass() {
+    private void makeSubClass() {
         String superName = modifiedClass.getNameInternal();
         byte[] byteCode = modifiedClass.getByteCode();
         long currentTimeMillis = System.currentTimeMillis();
@@ -61,7 +59,7 @@ public class ClassTransformer implements ClassFileTransformer {
         UnaryOperator<ClassVisitor> classNameModifier = cv -> getSubClassAdapter(cv, subClassName);
         byte[] subClassByteCode = ASMUtils.applyClassVisitor(byteCode, classNameModifier, false);
 
-        return new ModifiedClass(subClassName, subClassByteCode, subClassFilePath);
+        modifiedClass.makeSubclass(subClassName, subClassByteCode, subClassFilePath);
     }
 
     private ClassVisitor getSubClassAdapter(ClassVisitor cv, String subClassName) {

@@ -9,9 +9,8 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
+import java.util.function.Predicate;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -21,29 +20,59 @@ import org.hotpot.instrumentation.helper.ModifiedClass;
 public class TransformerService {
     private static Logger LOGGER = LogManager.getLogger(TransformerService.class);
     private Instrumentation inst;
-    private Set<ClassLoader> classLoaders;
     private Path classPathConfFilePath;
     private Map<String, ModifiedClass> modifiedClasses;
+    private Map<String, ClassLoader> classloaderMap;
 
     public TransformerService(Instrumentation inst, Path classPathConfFilePath) {
         this.inst = inst;
         this.classPathConfFilePath = classPathConfFilePath;
-        this.classLoaders = new HashSet<>();
         this.modifiedClasses = new HashMap<>();
+        this.classloaderMap = new HashMap<>();
     }
 
     public void handle(Path modifiedClassFile) {
+        if (!Files.exists(modifiedClassFile)) {
+            return;
+        }
+
         if (!Files.isRegularFile(modifiedClassFile) || !modifiedClassFile.getFileName().toString().endsWith(".class")) {
-            LOGGER.warn("[{}] may be not a class file or does not exist.", modifiedClassFile);
+            LOGGER.warn("[{}] may be not a class file.", modifiedClassFile);
+            return;
+        }
+        
+        if(isSubclass(modifiedClassFile)){
             return;
         }
 
         try {
             ModifiedClass modifiedClass = createModClass(modifiedClassFile);
+            if (!modifiedClass.isModifiable()) {
+                LOGGER.error("Class [{}] is not modifiable.", modifiedClass.getName());
+                return;
+            }
             handle(modifiedClass);
         } catch (IOException e) {
             LOGGER.error("Could not read class file " + modifiedClassFile + ".", e);
         }
+    }
+
+    private boolean isSubclass(Path modifiedClassFile) {
+        for (ModifiedClass modClass : modifiedClasses.values()) {
+            boolean isSubclass = modClass.isSubclass();
+            boolean isSameFile = false;
+            try {
+                isSameFile = Files.isSameFile(modClass.getClassFilePath(), modifiedClassFile);
+            } catch (IOException e) {
+                // seems to be not same file
+            }
+
+            if (isSubclass && isSameFile) {
+                return true;
+            }
+        } 
+
+        return false;
     }
 
     private ModifiedClass createModClass(Path modifiedClassFile) throws IOException {
@@ -55,35 +84,32 @@ public class TransformerService {
 
     private void collectClassInfo(ModifiedClass modifiedClass) {
         String modifiedClassName = modifiedClass.getName();
-        InputStream origClassIS = ClassLoader
-                            .getSystemResourceAsStream(modifiedClassName.replace(".", "/") + ".class");
-        boolean classExists = origClassIS != null;
 
-        modifiedClass.setClassExist(classExists);
+        Class<?>[] allLoadedClasses = inst.getAllLoadedClasses();
+        Predicate<String> excludesClassLoader = name -> name.endsWith(".DelegatingClassLoader");
+        excludesClassLoader = excludesClassLoader
+                .or(name -> name.endsWith("$DynamicClassLoader"));
 
-        if(!classExists) {
-            return;
-        }
-
-        Class<?>[] initiatedClasses = inst.getAllLoadedClasses();
-        for (Class<?> clazz : initiatedClasses) {
-            String initiatedClassName = clazz.getName();
+        for (Class<?> clazz : allLoadedClasses) {
+            String loadedClassName = clazz.getName();
             boolean isModifiableClass = inst.isModifiableClass(clazz);
-            boolean modClassAllreadyLoaded = initiatedClassName.equals(modifiedClassName);
+            boolean modClassAllreadyLoaded = loadedClassName.equals(modifiedClassName);
 
-            if (isModifiableClass && modClassAllreadyLoaded) {
+            if (modClassAllreadyLoaded) {
                 modifiedClass.setModifiable(isModifiableClass);
                 modifiedClass.setLoadedClass(clazz);
             } else if (isModifiableClass && !modClassAllreadyLoaded) {
-                ClassLoader loader = clazz.getClassLoader();
-                if (loader != null) {
-                    InputStream classIS = ClassLoader
-                            .getSystemResourceAsStream(initiatedClassName.replace(".", "/") + ".class");
+                ClassLoader classLoader = clazz.getClassLoader();
 
-                    boolean hasReference = ASMUtils.hasReference(classIS, modifiedClassName);
-                    if (hasReference && inst.isModifiableClass(clazz)) {
-                        LOGGER.info("Class [{}] has reference to [{}]", clazz.getName(), modifiedClassName);
-                        modifiedClass.addClassWithRef(clazz);
+                if (classLoader != null) {
+                    String clName = classLoader.getClass().getName();
+                    if (excludesClassLoader.negate().test(clName)) {
+                        String loadedClassFile = loadedClassName.replace(".", "/") + ".class";
+                        InputStream classIS = classLoader.getResourceAsStream(loadedClassFile);
+                        boolean hasReference = ASMUtils.hasReference(classIS, modifiedClassName);
+                        if (hasReference) {
+                            modifiedClass.addClassWithRef(clazz);
+                        }
                     }
                 }
             }
@@ -118,37 +144,24 @@ public class TransformerService {
         String modifiedClassName = modifiedClass.getName();
         Class<?> loadedClass = modifiedClass.getLoadedClass();
 
-        if (loadedClass == null) {
-            LOGGER.info("Class [{}] not loaded, no retransformation.", modifiedClassName);
-            try {
-                Class.forName(modifiedClassName);
-                ModifiedClass removeModifiedClass = modifiedClasses.remove(modifiedClassName);
-                if (removeModifiedClass != null) {
-                    try {
-                        Files.delete(removeModifiedClass.getClassFilePath());
-                    } catch (IOException e) {
-                        LOGGER.error("Delete modified class file [{}] failed.", removeModifiedClass.getClassFilePath());
-                        e.printStackTrace();
-                    }
-                }
+        LOGGER.info("class [{}] loaded class [{}] and exist [{}]", modifiedClassName, loadedClass,
+                modifiedClass.classExists());
 
-                /* if(!modifiedClass.classExists()) {
-                    return;
-                } */
-            } catch (ClassNotFoundException e) {
-                LOGGER.info("Get class [{}] with Class.forName failed.", modifiedClassName);
-            }
+        if (loadedClass == null) {
+            LOGGER.info("Class [{}] not loaded, will be load when needed.", modifiedClassName);
             return;
         }
 
-        ClassLoader classLoader = loadedClass.getClassLoader();
-        LOGGER.info("get classloader {} from {}", classLoader.getName(), loadedClass.getName());
-        Class<? extends ClassLoader> classLoaderClass = classLoader.getClass();
-        if (!classLoaders.contains(classLoaderClass)) {
+        ClassLoader classloader = modifiedClass.getClassloader();
+        String clClassName = classloader.getClass().getName();
+
+        LOGGER.info("Class [{}] has classloader [{}]", classloader.getName(), loadedClass.getName());
+        Class<? extends ClassLoader> classLoaderClass = classloader.getClass();
+        if (!classloaderMap.containsKey(clClassName)) {
             if (inst.isModifiableClass(classLoaderClass)) {
-                LOGGER.info("Transform classloader [{}] of class [{}].", classLoaderClass.getName(), modifiedClassName);
+                LOGGER.info("Transform classloader [{}] of class [{}].", modifiedClassName, clClassName);
                 String methodName = "loadClass";
-                ClassLoaderWithMethod classLoaderWithMethod = getClassLoaderWithMethod(classLoader, methodName,
+                ClassLoaderWithMethod classLoaderWithMethod = getClassLoaderWithMethod(classloader, methodName,
                         String.class, boolean.class);
 
                 if (classLoaderWithMethod == null) {
@@ -163,18 +176,23 @@ public class TransformerService {
                 ClassLoaderTransformer classLoaderTransformer = new ClassLoaderTransformer(classPathConfFilePath,
                         targetclassLoaderClass, methodName, descriptor);
                 transform(classLoaderTransformer, targetclassLoaderClass);
-                classLoaders.add(classLoaderWithMethod.classloader);
+                //classLoaders.add(classLoaderWithMethod.classloader);
+                classloaderMap.put(clClassName, classloader);
                 // classLoaders.add(classLoaderWithMethod.classloader);
             } else {
-                LOGGER.info("Transform classloader [{}] not modifiable.", classLoader.getName());
+                LOGGER.info("Transform classloader [{}] not modifiable.", classloader.getName());
             }
         }
 
         ClassTransformer classTransformer = new ClassTransformer(modifiedClass);
         transform(classTransformer, loadedClass);
-        ModifiedClass subClass = classTransformer.getSubClass();
+        ModifiedClass subClass = classTransformer.getModClass();
+        for (Class<?> classWithRef : subClass.getClassesWithRef()) {
+            LOGGER.info("Class [{}] has ref to [{}]", classWithRef, subClass.getName());
+        }
+        LOGGER.info("Class [{}] is subclass [{}]",  subClass.getName(), subClass.isSubclass());
 
-        if (subClass != null) {
+        if (subClass.isSubclass()) {
             // method changed
             String subClassName = subClass.getName();
             Path subClassFilePath = subClass.getClassFilePath();
@@ -183,44 +201,32 @@ public class TransformerService {
             // deletes subclass file after loaded by Classloader
             // find all classes with reference to class
             // reset reference from class to subclass
-            ClassReferenceTransformer classReferenceTransformer = new ClassReferenceTransformer(modifiedClassName,
-                    subClassName);
-
-            transform(classReferenceTransformer, modifiedClass.getClassesWithRef());
+            updateClassRefs(subClass.getSuperName(), subClassName, modifiedClass.getClassesWithRef());
 
             try {
                 Files.write(subClassFilePath, subClassByteCode);
-                modifiedClasses.put(subClassName, subClass);
+                modifiedClasses.put(subClass.getSuperName(), subClass);
             } catch (IOException e) {
                 LOGGER.error("Save subclass [{}] to file [{}] failed.", subClassName, subClassFilePath);
                 e.printStackTrace();
             }
         }
+    }
 
-        /*
-         * Class[] initiatedClasses = inst.getInitiatedClasses(classLoader);
-         * Path logFile =
-         * classPathConfFilePath.getParent().resolve("initiatedClasses.txt");
-         * 
-         * try {
-         * if(!Files.exists(logFile)) {
-         * Files.createFile(logFile);
-         * }
-         * FileWriter fileWriter = new FileWriter(logFile.toFile(), true);
-         * for (Class initiatedClass : initiatedClasses) {
-         * fileWriter.write(initiatedClass.getName()+"\n");
-         * }
-         * } catch (IOException e) {
-         * // TODO Auto-generated catch block
-         * e.printStackTrace();
-         * }
-         */
+    private void updateClassRefs(String modifiedClassName, String subClassName, Class<?>[] classesWithRef) {
+        ClassReferenceTransformer classReferenceTransformer = new ClassReferenceTransformer(modifiedClassName,
+                subClassName);
+        transform(classReferenceTransformer, classesWithRef);
     }
 
     private void transform(ClassFileTransformer transformer, Class<?>... targetCls) {
         inst.addTransformer(transformer, true);
         // String className = targetCls.getName();
         try {
+            LOGGER.info("before retransform using [{}]", transformer.getClass());
+            for (Class<?> clazz : targetCls) {
+                LOGGER.info("before retransform target [{}]", clazz);
+            }
             inst.retransformClasses(targetCls);
         } catch (UnmodifiableClassException e) {
             LOGGER.error(e);
