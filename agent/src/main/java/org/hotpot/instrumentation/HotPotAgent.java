@@ -1,22 +1,21 @@
 package org.hotpot.instrumentation;
 
 import java.io.IOException;
-import java.lang.instrument.ClassFileTransformer;
-import java.lang.instrument.IllegalClassFormatException;
+import java.lang.instrument.ClassDefinition;
 import java.lang.instrument.Instrumentation;
+import java.lang.instrument.UnmodifiableClassException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.security.ProtectionDomain;
+import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.hotpot.events.ClassPathConfHandler;
 import org.hotpot.events.ClassPathHandler;
 import org.hotpot.events.PathWatchService;
-import org.hotpot.instrumentation.helper.ClassLoaderUtil;
-import org.hotpot.instrumentation.transformer.TransformerService;
+import org.hotpot.instrumentation.transformer.HotPotClassTransformer;
 
 public class HotPotAgent {
     private static Logger LOGGER = LogManager.getLogger(HotPotAgent.class);
@@ -28,21 +27,6 @@ public class HotPotAgent {
 
     public static void agentmain(String agentArgs, Instrumentation inst) {
         LOGGER.info("[HotPot] agentmain");
-
-        // exp
-        ClassLoaderUtil classLoaderUtil = new ClassLoaderUtil(inst::getAllLoadedClasses, inst::isModifiableClass);
-        String className = "fsu.jportal.mets.JPMetsHierarchyGenerator";
-
-        try {
-            ClassLoader classLoader = classLoaderUtil.getClassLoader(className);
-            LOGGER.info("[HotPot] Found classloader [{}] for class [{}]", classLoader.getClass().getName(), className);
-            classLoader.loadClass(className);
-        } catch (IOException e1) {
-            LOGGER.error("[HotPot] No classloader found for class [{}]", className);
-        } catch (ClassNotFoundException e) {
-            LOGGER.error("[HotPot] class not found [{}]", className);
-        }
-        // exp
 
         String configPathStr = agentArgs;
         Path configPath = null;
@@ -65,43 +49,64 @@ public class HotPotAgent {
         }
 
         LOGGER.info("Using config dir [{}].", configPath);
-        ClassPathConfHandler classPathConfHandler = new ClassPathConfHandler(configPath);
-        Path classPathConfFilePath = classPathConfHandler.getConfFilePath();
-        ClassPathHandler classPathHandler = new ClassPathHandler();
-        TransformerService ts = new TransformerService(inst, classPathConfFilePath);
-
-        classPathConfHandler.addClassPathConsumer(classPathHandler::setClassPaths);
-        classPathHandler.addClassPathHandler(ts::handle);
-        classPathConfHandler.init();
-
+        ClassPathHandler classPathHandler = new ClassPathHandler(configPath);
         PathWatchService pathWatchService = new PathWatchService();
-        pathWatchService.addHandlers(classPathConfHandler, classPathHandler);
+        pathWatchService.addHandlers(classPathHandler);
 
+        HotPotClassTransformer hotPotClassTransformer = new HotPotClassTransformer();
+
+        handleClassModified(classPathHandler, hotPotClassTransformer, inst);
+
+        inst.addTransformer(hotPotClassTransformer, true);
         new Thread(pathWatchService).start();
-        //info(inst);
     }
 
-    public static void info(Instrumentation inst) {
-        ClassFileTransformer transformer = new InfoTransformer();
-        inst.addTransformer(transformer, true);
-
+    private static void handleClassModified(ClassPathHandler classPathHandler,
+            HotPotClassTransformer hotPotClassTransformer, Instrumentation inst) {
+        BiConsumer<String, Path> addModifiedClass = hotPotClassTransformer::addModifiedClass;
+        BiConsumer<String, Path> retransformClass = (className, path) -> retransform(className, path, inst);;
+        BiConsumer<String, Path> modifyObserver = addModifiedClass.andThen(retransformClass);
+        
+        classPathHandler.onCreate(modifyObserver);
+        classPathHandler.onModify(modifyObserver);
+        hotPotClassTransformer.setConfFilePath(classPathHandler::getConfFilePath);
+        hotPotClassTransformer.setRedefineFunc((clazz, byteCode) -> reDefine(inst, clazz, byteCode));
+        
     }
 
-    private static class InfoTransformer implements ClassFileTransformer {
-        @Override
-        public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
-                ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
-            try {
-                String loaderName = loader.getClass().getName();
-                String domain = protectionDomain.toString();
-
-                String msg = "class: [" + className + "] - [" + domain + "] - Loader: [" + loaderName + "]";
-                Files.write(Paths.get("/workspaces/agentTest/info.txt"), msg.getBytes(), StandardOpenOption.APPEND);
-            } catch (IOException e) {
-                // exception handling left as an exercise for the reader
+    public static void retransform(String className, Path path, Instrumentation inst) {
+        className = className.replace("/", ".");
+        for (Class<?> loadedClass : inst.getAllLoadedClasses()) {
+            if (loadedClass.getName().equals(className)) {
+                retransform(inst, loadedClass);
             }
-            return null;
         }
+    }
 
+    public static void reDefine(Instrumentation inst, Class<?> theClass, byte[] theClassFile) {
+        ClassDefinition definition = new ClassDefinition(theClass, theClassFile);
+
+        try {
+            inst.redefineClasses(definition);
+        } catch (ClassNotFoundException e) {
+            LOGGER.info("Redefine class [{}]", theClass.getName());
+            e.printStackTrace();
+        } catch (UnmodifiableClassException e) {
+            LOGGER.info("Redefine failed, class [{}] is unmodifiable.", theClass.getName());
+            e.printStackTrace();
+        }
+    }
+    public static void retransform(Instrumentation inst, Class<?>... classes) {
+        String classesStr = Stream.of(classes)
+        .map(Class::toString)
+        .collect(Collectors.joining(", "));
+
+        try {
+            LOGGER.info("Retransform class(es) [{}]", classesStr);
+            inst.retransformClasses(classes);
+        } catch (UnmodifiableClassException e) {
+            LOGGER.info("Retransform failed, class(es) [{}] is/are unmodifiable.", classesStr);
+            e.printStackTrace();
+        }
     }
 }

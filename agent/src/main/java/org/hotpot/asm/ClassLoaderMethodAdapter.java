@@ -22,19 +22,21 @@ import static org.objectweb.asm.Opcodes.IFNULL;
 import static org.objectweb.asm.Opcodes.IF_ACMPEQ;
 import static org.objectweb.asm.Opcodes.INTEGER;
 import static org.objectweb.asm.Opcodes.INVOKEINTERFACE;
+import static org.objectweb.asm.Opcodes.INVOKESPECIAL;
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
 import static org.objectweb.asm.Opcodes.MONITORENTER;
 import static org.objectweb.asm.Opcodes.MONITOREXIT;
+import static org.objectweb.asm.Opcodes.NEW;
 
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 
-public class ModClassLoaderAdapter extends MethodVisitor {
+public class ClassLoaderMethodAdapter extends MethodVisitor {
     private String owner;
     private String pathToConfFile;
 
-    public ModClassLoaderAdapter(String owner, MethodVisitor mv, String classPathConfFile) {
+    public ClassLoaderMethodAdapter(String owner, MethodVisitor mv, String classPathConfFile) {
         super(ASM8, mv);
         this.owner = owner;
         this.pathToConfFile = classPathConfFile;
@@ -49,34 +51,35 @@ public class ModClassLoaderAdapter extends MethodVisitor {
      * Add to begin of loadClass(String name, boolean resolve)
      * 
      * <pre>
-     * System.out.println("HotPot: begin insert code for loadClas(String, boolean)");
      * synchronized (getClassLoadingLock(name)) {
-     *     // First, check if the class has already been loaded
-     *     Class<?> c = findLoadedClass(name);
-     *     if (c == null) {
-     *         // Class not loaded, try loading from our classpath
-     *         Path classPathConf = Paths.get("/path/to/confFile");
-     *         String classFile = name.replace(".", "/").concat(".class");
-     *         try {
-     *             try (BufferedReader br = Files.newBufferedReader(classPathConf)) {
-     *                 String classPathStr = br.readLine();
+     *      // First, check if the class has already been loaded
+     *      Class<?> c = findLoadedClass(name);
+     *      if (c == null) {
+     *          // Class not loaded, try loading from our classpath
+     *          Path classPathConf = Paths.get("/path/to/confFile");
+     *          String classFile = name.replace(".", "/").concat(".class");
      * 
-     *                 while (classPathStr != null) {
-     *                     Path classPath = Paths.get(classPathStr);
-     *                     Path classFilePath = classPath.resolve(classFile);
-     *                     if (Files.exists(classFilePath)) {
-     *                         byte[] b = Files.readAllBytes(classFilePath);
-     *                         return defineClass(name, b, 0, b.length);
-     *                     }
-     *                     classPathStr = br.readLine();
-     *                 }
-     *             }
-     *         } catch (IOException e) {
-     *             e.printStackTrace();
-     *         }
-     *     }
-     * }
-     * System.out.println("HotPot: end insert code for loadClas(String, boolean)");
+     *          try (BufferedReader br = Files.newBufferedReader(classPathConf)) {
+     *              String classPathStr = br.readLine();
+     *
+     *              while (classPathStr != null) {
+     *                  Path classPath = Paths.get(classPathStr);
+     *                  Path classFilePath = classPath.resolve(classFile);
+     *                  if (Files.exists(classFilePath)) {
+     *                      byte[] b = Files.readAllBytes(classFilePath);
+     *                      System.out.println("HotPot: stubbed loadClas(String, boolean) in " + this.getClass());
+     *                      System.out.println("HotPot: define class from " + classFilePath.toAbsolutePath());
+     *                      return defineClass(name, b, 0, b.length);
+     *                  }
+     *                  classPathStr = br.readLine();
+     *              }
+     *          } catch (IOException e) {
+     *              System.out.println("HotPot error: stubbed loadClas(String, boolean) in " + this.getClass());
+     *              System.out.println("HotPot error: could not define " + classFile);
+     *              e.printStackTrace();
+     *          }
+     *      }
+     *  }
      * </pre>
      */
     private void modifyLoadClass_String_boolean() {
@@ -104,16 +107,9 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitTryCatchBlock(label3, label13, label12, null);
         Label label14 = new Label();
         mv.visitTryCatchBlock(label12, label14, label12, null);
-        Label label15 = new Label();
-        mv.visitLabel(label15);
-        mv.visitLineNumber(42, label15);
-        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
-        mv.visitLdcInsn("HotPot: begin insert code for loadClass(String, boolean)");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V",
-                false);
         Label label16 = new Label();
         mv.visitLabel(label16);
-        mv.visitLineNumber(43, label16);
+        mv.visitLineNumber(13, label16);
         mv.visitVarInsn(ALOAD, 0);
         mv.visitVarInsn(ALOAD, 1);
         mv.visitMethodInsn(INVOKEVIRTUAL, owner, "getClassLoadingLock",
@@ -122,21 +118,21 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitVarInsn(ASTORE, 3);
         mv.visitInsn(MONITORENTER);
         mv.visitLabel(label10);
-        mv.visitLineNumber(45, label10);
+        mv.visitLineNumber(15, label10);
         mv.visitVarInsn(ALOAD, 0);
         mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, owner, "findLoadedClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, owner, "findLoadedClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                false);
         mv.visitVarInsn(ASTORE, 4);
         Label label17 = new Label();
         mv.visitLabel(label17);
-        mv.visitLineNumber(46, label17);
+        mv.visitLineNumber(16, label17);
         mv.visitVarInsn(ALOAD, 4);
         Label label18 = new Label();
         mv.visitJumpInsn(IFNONNULL, label18);
         Label label19 = new Label();
         mv.visitLabel(label19);
-        mv.visitLineNumber(48, label19);
+        mv.visitLineNumber(18, label19);
         mv.visitLdcInsn(pathToConfFile);
         mv.visitInsn(ICONST_0);
         mv.visitTypeInsn(ANEWARRAY, "java/lang/String");
@@ -145,7 +141,7 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitVarInsn(ASTORE, 5);
         Label label20 = new Label();
         mv.visitLabel(label20);
-        mv.visitLineNumber(49, label20);
+        mv.visitLineNumber(19, label20);
         mv.visitVarInsn(ALOAD, 1);
         mv.visitLdcInsn(".");
         mv.visitLdcInsn("/");
@@ -156,7 +152,7 @@ public class ModClassLoaderAdapter extends MethodVisitor {
                 "(Ljava/lang/String;)Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 6);
         mv.visitLabel(label8);
-        mv.visitLineNumber(51, label8);
+        mv.visitLineNumber(21, label8);
         mv.visitInsn(ACONST_NULL);
         mv.visitVarInsn(ASTORE, 7);
         mv.visitInsn(ACONST_NULL);
@@ -167,25 +163,22 @@ public class ModClassLoaderAdapter extends MethodVisitor {
                 "(Ljava/nio/file/Path;)Ljava/io/BufferedReader;", false);
         mv.visitVarInsn(ASTORE, 9);
         mv.visitLabel(label0);
-        mv.visitLineNumber(52, label0);
+        mv.visitLineNumber(22, label0);
         mv.visitVarInsn(ALOAD, 9);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "readLine",
-                "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "readLine", "()Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 10);
         Label label21 = new Label();
         mv.visitLabel(label21);
-        mv.visitLineNumber(54, label21);
+        mv.visitLineNumber(24, label21);
         Label label22 = new Label();
         mv.visitJumpInsn(GOTO, label22);
         Label label23 = new Label();
         mv.visitLabel(label23);
-        mv.visitLineNumber(55, label23);
-        mv.visitFrame(F_FULL, 11,
-                new Object[] { owner, "java/lang/String", INTEGER,
-                        "java/lang/Object", "java/lang/Class", "java/nio/file/Path",
-                        "java/lang/String", "java/lang/Throwable", "java/lang/Throwable",
-                        "java/io/BufferedReader", "java/lang/String" },
-                0, new Object[] {});
+        mv.visitLineNumber(25, label23);
+        mv.visitFrame(F_FULL, 11, new Object[] { owner, "java/lang/String", INTEGER, "java/lang/Object",
+                "java/lang/Class", "java/nio/file/Path", "java/lang/String", "java/lang/Throwable",
+                "java/lang/Throwable", "java/io/BufferedReader", "java/lang/String" }, 0,
+                new Object[] {});
         mv.visitVarInsn(ALOAD, 10);
         mv.visitInsn(ICONST_0);
         mv.visitTypeInsn(ANEWARRAY, "java/lang/String");
@@ -194,7 +187,7 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitVarInsn(ASTORE, 11);
         Label label24 = new Label();
         mv.visitLabel(label24);
-        mv.visitLineNumber(56, label24);
+        mv.visitLineNumber(26, label24);
         mv.visitVarInsn(ALOAD, 11);
         mv.visitVarInsn(ALOAD, 6);
         mv.visitMethodInsn(INVOKEINTERFACE, "java/nio/file/Path", "resolve",
@@ -202,7 +195,7 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitVarInsn(ASTORE, 12);
         Label label25 = new Label();
         mv.visitLabel(label25);
-        mv.visitLineNumber(57, label25);
+        mv.visitLineNumber(27, label25);
         mv.visitVarInsn(ALOAD, 12);
         mv.visitInsn(ICONST_0);
         mv.visitTypeInsn(ANEWARRAY, "java/nio/file/LinkOption");
@@ -211,74 +204,99 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitJumpInsn(IFEQ, label3);
         Label label26 = new Label();
         mv.visitLabel(label26);
-        mv.visitLineNumber(58, label26);
+        mv.visitLineNumber(28, label26);
         mv.visitVarInsn(ALOAD, 12);
-        mv.visitMethodInsn(INVOKESTATIC, "java/nio/file/Files", "readAllBytes",
-                "(Ljava/nio/file/Path;)[B", false);
+        mv.visitMethodInsn(INVOKESTATIC, "java/nio/file/Files", "readAllBytes", "(Ljava/nio/file/Path;)[B",
+                false);
         mv.visitVarInsn(ASTORE, 13);
         Label label27 = new Label();
         mv.visitLabel(label27);
-        mv.visitLineNumber(59, label27);
+        mv.visitLineNumber(29, label27);
+        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+        mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+        mv.visitInsn(DUP);
+        mv.visitLdcInsn("HotPot: stubbed loadClas(String, boolean) in ");
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "(Ljava/lang/String;)V", false);
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                "(Ljava/lang/Object;)Ljava/lang/StringBuilder;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+        Label label28 = new Label();
+        mv.visitLabel(label28);
+        mv.visitLineNumber(30, label28);
+        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+        mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+        mv.visitInsn(DUP);
+        mv.visitLdcInsn("HotPot: define class from ");
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "(Ljava/lang/String;)V", false);
+        mv.visitVarInsn(ALOAD, 12);
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/nio/file/Path", "toAbsolutePath", "()Ljava/nio/file/Path;",
+                true);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                "(Ljava/lang/Object;)Ljava/lang/StringBuilder;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+        Label label29 = new Label();
+        mv.visitLabel(label29);
+        mv.visitLineNumber(31, label29);
         mv.visitVarInsn(ALOAD, 0);
         mv.visitVarInsn(ALOAD, 1);
         mv.visitVarInsn(ALOAD, 13);
         mv.visitInsn(ICONST_0);
         mv.visitVarInsn(ALOAD, 13);
         mv.visitInsn(ARRAYLENGTH);
-        mv.visitMethodInsn(INVOKEVIRTUAL, owner, "defineClass",
-                "(Ljava/lang/String;[BII)Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, owner, "defineClass", "(Ljava/lang/String;[BII)Ljava/lang/Class;",
+                false);
         mv.visitLabel(label1);
-        mv.visitLineNumber(63, label1);
+        mv.visitLineNumber(35, label1);
         mv.visitVarInsn(ALOAD, 9);
         mv.visitJumpInsn(IFNULL, label6);
         mv.visitVarInsn(ALOAD, 9);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "close", "()V", false);
         mv.visitLabel(label6);
-        mv.visitLineNumber(59, label6);
+        mv.visitLineNumber(31, label6);
         mv.visitFrame(F_FULL, 14,
-                new Object[] { owner, "java/lang/String", INTEGER,
-                        "java/lang/Object", "java/lang/Class", "java/nio/file/Path",
-                        "java/lang/String", "java/lang/Throwable", "java/lang/Throwable",
-                        "java/io/BufferedReader", "java/lang/String", "java/nio/file/Path",
-                        "java/nio/file/Path", "[B" },
+                new Object[] { owner, "java/lang/String", INTEGER, "java/lang/Object",
+                        "java/lang/Class", "java/nio/file/Path", "java/lang/String",
+                        "java/lang/Throwable", "java/lang/Throwable", "java/io/BufferedReader",
+                        "java/lang/String", "java/nio/file/Path", "java/nio/file/Path", "[B" },
                 1, new Object[] { "java/lang/Class" });
         mv.visitVarInsn(ALOAD, 3);
         mv.visitInsn(MONITOREXIT);
         mv.visitLabel(label11);
         mv.visitInsn(ARETURN);
         mv.visitLabel(label3);
-        mv.visitLineNumber(61, label3);
+        mv.visitLineNumber(33, label3);
         mv.visitFrame(F_CHOP, 1, null, 0, null);
         mv.visitVarInsn(ALOAD, 9);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "readLine",
-                "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "readLine", "()Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 10);
         mv.visitLabel(label22);
-        mv.visitLineNumber(54, label22);
+        mv.visitLineNumber(24, label22);
         mv.visitFrame(F_CHOP, 2, null, 0, null);
         mv.visitVarInsn(ALOAD, 10);
         mv.visitJumpInsn(IFNONNULL, label23);
         mv.visitLabel(label4);
-        mv.visitLineNumber(63, label4);
+        mv.visitLineNumber(35, label4);
         mv.visitVarInsn(ALOAD, 9);
         mv.visitJumpInsn(IFNULL, label18);
         mv.visitVarInsn(ALOAD, 9);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "close", "()V", false);
         mv.visitJumpInsn(GOTO, label18);
         mv.visitLabel(label2);
-        mv.visitFrame(F_FULL, 10,
-                new Object[] { owner, "java/lang/String", INTEGER,
-                        "java/lang/Object", "java/lang/Class", "java/nio/file/Path",
-                        "java/lang/String", "java/lang/Throwable", "java/lang/Throwable",
-                        "java/io/BufferedReader" },
-                1, new Object[] { "java/lang/Throwable" });
+        mv.visitFrame(F_FULL, 10, new Object[] { owner, "java/lang/String", INTEGER, "java/lang/Object",
+                "java/lang/Class", "java/nio/file/Path", "java/lang/String", "java/lang/Throwable",
+                "java/lang/Throwable", "java/io/BufferedReader" }, 1,
+                new Object[] { "java/lang/Throwable" });
         mv.visitVarInsn(ASTORE, 7);
         mv.visitVarInsn(ALOAD, 9);
-        Label label28 = new Label();
-        mv.visitJumpInsn(IFNULL, label28);
+        Label label30 = new Label();
+        mv.visitJumpInsn(IFNULL, label30);
         mv.visitVarInsn(ALOAD, 9);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/BufferedReader", "close", "()V", false);
-        mv.visitLabel(label28);
+        mv.visitLabel(label30);
         mv.visitFrame(F_CHOP, 1, null, 0, null);
         mv.visitVarInsn(ALOAD, 7);
         mv.visitInsn(ATHROW);
@@ -286,58 +304,79 @@ public class ModClassLoaderAdapter extends MethodVisitor {
         mv.visitFrame(F_SAME1, 0, null, 1, new Object[] { "java/lang/Throwable" });
         mv.visitVarInsn(ASTORE, 8);
         mv.visitVarInsn(ALOAD, 7);
-        Label label29 = new Label();
-        mv.visitJumpInsn(IFNONNULL, label29);
+        Label label31 = new Label();
+        mv.visitJumpInsn(IFNONNULL, label31);
         mv.visitVarInsn(ALOAD, 8);
         mv.visitVarInsn(ASTORE, 7);
-        Label label30 = new Label();
-        mv.visitJumpInsn(GOTO, label30);
-        mv.visitLabel(label29);
+        Label label32 = new Label();
+        mv.visitJumpInsn(GOTO, label32);
+        mv.visitLabel(label31);
         mv.visitFrame(F_SAME, 0, null, 0, null);
         mv.visitVarInsn(ALOAD, 7);
         mv.visitVarInsn(ALOAD, 8);
-        mv.visitJumpInsn(IF_ACMPEQ, label30);
+        mv.visitJumpInsn(IF_ACMPEQ, label32);
         mv.visitVarInsn(ALOAD, 7);
         mv.visitVarInsn(ALOAD, 8);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Throwable", "addSuppressed",
-                "(Ljava/lang/Throwable;)V", false);
-        mv.visitLabel(label30);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Throwable", "addSuppressed", "(Ljava/lang/Throwable;)V",
+                false);
+        mv.visitLabel(label32);
         mv.visitFrame(F_SAME, 0, null, 0, null);
         mv.visitVarInsn(ALOAD, 7);
         mv.visitInsn(ATHROW);
         mv.visitLabel(label9);
-        mv.visitLineNumber(64, label9);
         mv.visitFrame(F_FULL, 7,
-                new Object[] { owner, "java/lang/String", INTEGER,
-                        "java/lang/Object", "java/lang/Class", "java/nio/file/Path",
-                        "java/lang/String" },
+                new Object[] { owner, "java/lang/String", INTEGER, "java/lang/Object",
+                        "java/lang/Class", "java/nio/file/Path", "java/lang/String" },
                 1, new Object[] { "java/io/IOException" });
         mv.visitVarInsn(ASTORE, 7);
-        Label label31 = new Label();
-        mv.visitLabel(label31);
-        mv.visitLineNumber(65, label31);
+        Label label33 = new Label();
+        mv.visitLabel(label33);
+        mv.visitLineNumber(36, label33);
+        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+        mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+        mv.visitInsn(DUP);
+        mv.visitLdcInsn("HotPot error: stubbed loadClas(String, boolean) in ");
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "(Ljava/lang/String;)V", false);
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                "(Ljava/lang/Object;)Ljava/lang/StringBuilder;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+        Label label34 = new Label();
+        mv.visitLabel(label34);
+        mv.visitLineNumber(37, label34);
+        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+        mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+        mv.visitInsn(DUP);
+        mv.visitLdcInsn("HotPot error: could not define ");
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "(Ljava/lang/String;)V", false);
+        mv.visitVarInsn(ALOAD, 6);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+        Label label35 = new Label();
+        mv.visitLabel(label35);
+        mv.visitLineNumber(38, label35);
         mv.visitVarInsn(ALOAD, 7);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/IOException", "printStackTrace", "()V", false);
         mv.visitLabel(label18);
-        mv.visitLineNumber(43, label18);
+        mv.visitLineNumber(13, label18);
         mv.visitFrame(F_CHOP, 3, null, 0, null);
         mv.visitVarInsn(ALOAD, 3);
         mv.visitInsn(MONITOREXIT);
         mv.visitLabel(label13);
-        Label label32 = new Label();
-        mv.visitJumpInsn(GOTO, label32);
+        Label label36 = new Label();
+        mv.visitJumpInsn(GOTO, label36);
         mv.visitLabel(label12);
         mv.visitFrame(F_SAME1, 0, null, 1, new Object[] { "java/lang/Throwable" });
         mv.visitVarInsn(ALOAD, 3);
         mv.visitInsn(MONITOREXIT);
         mv.visitLabel(label14);
         mv.visitInsn(ATHROW);
-        mv.visitLabel(label32);
-        mv.visitLineNumber(69, label32);
+        mv.visitLabel(label36);
+        mv.visitLineNumber(42, label36);
         mv.visitFrame(F_CHOP, 1, null, 0, null);
-        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
-        mv.visitLdcInsn("HotPot: end insert code for loadClass(String, boolean)");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V",
-                false);
     }
 }

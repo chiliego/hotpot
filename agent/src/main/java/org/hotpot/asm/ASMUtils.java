@@ -65,10 +65,25 @@ public final class ASMUtils {
         return origMethods.equals(modifiedMethods);
     }
 
+    public static byte[] applyClassVisitor(InputStream byteCodeIS, UnaryOperator<ClassVisitor> cvFunc, boolean printByteCode) {
+        try {
+            ClassReader cr = new ClassReader(byteCodeIS);
+            return applyClassVisitor(cr, cvFunc, printByteCode);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return null;
+    }
+
     public static byte[] applyClassVisitor(byte[] byteCode, UnaryOperator<ClassVisitor> cvFunc, boolean printByteCode) {
+        ClassReader cr = new ClassReader(byteCode);
+        return applyClassVisitor(cr, cvFunc, printByteCode);
+    }
+
+    public static byte[] applyClassVisitor(ClassReader cr, UnaryOperator<ClassVisitor> cvFunc, boolean printByteCode) {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         ClassVisitor cv = cvFunc.apply(cw);
-        ClassReader cr = new ClassReader(byteCode);
         cr.accept(cv, 0);
         byte[] resultByteCode = cw.toByteArray();
         if (printByteCode) {
