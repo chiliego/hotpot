@@ -10,7 +10,7 @@ import java.util.function.UnaryOperator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hotpot.asm.ASMUtils;
-import org.hotpot.asm.ModClassLoaderAdapter;
+import org.hotpot.asm.ClassLoaderMethodAdapter;
 import org.hotpot.asm.ModMethodAdapter;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
@@ -47,6 +47,6 @@ public class ClassLoaderTransformer implements ClassFileTransformer {
 
     private BiFunction<String, MethodVisitor, MethodVisitor> createMethodAdapter(Path classPathConfFilePath) {
         String classPathConfFile = classPathConfFilePath.toAbsolutePath().toString();
-        return (owner, mv) -> new ModClassLoaderAdapter(owner, mv, classPathConfFile);
+        return (owner, mv) -> new ClassLoaderMethodAdapter(owner, mv, classPathConfFile);
     }
 }

@@ -24,6 +24,12 @@ public class TransformerService {
     private Map<String, ModifiedClass> modifiedClasses;
     private Map<String, ClassLoader> classloaderMap;
 
+    public TransformerService(Instrumentation inst) {
+        this.inst = inst;
+        this.modifiedClasses = new HashMap<>();
+        this.classloaderMap = new HashMap<>();
+    }
+    
     public TransformerService(Instrumentation inst, Path classPathConfFilePath) {
         this.inst = inst;
         this.classPathConfFilePath = classPathConfFilePath;
@@ -289,5 +295,9 @@ public class TransformerService {
             this.classloader = classloader;
             this.method = method;
         }
+    }
+
+    public void addModified(Path classFilePath) {
+        
     }
 }

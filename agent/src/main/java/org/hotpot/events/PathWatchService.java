@@ -22,8 +22,10 @@ public class PathWatchService implements Runnable {
     static Logger LOGGER = LogManager.getLogger(PathWatchService.class);
     private WatchService watchService;
     private Map<PathWatchEventHandler, List<WatchablePath>> handlerPathsMap;
+    private List<String> pathCreated;
 
     public PathWatchService() {
+        this.pathCreated = new ArrayList<>();
         try {
             watchService = FileSystems.getDefault().newWatchService();
         } catch (IOException e) {
@@ -39,16 +41,13 @@ public class PathWatchService implements Runnable {
                 for (WatchEvent<?> event : key.pollEvents()) {
                     Path dir = (Path) key.watchable();
                     Path path = dir.resolve((Path) event.context());
-                    
+
                     if (ENTRY_CREATE.equals(event.kind())) {
-                        LOGGER.info("Handle file created [{}].", path);
                         handleCreated(path);
                     } else if (ENTRY_MODIFY.equals(event.kind())) {
-                        LOGGER.info("Handle file modified [{}].", path);
                         handleModified(path);
                     } else if (ENTRY_DELETE.equals(event.kind())) {
-                        LOGGER.info("Handle file deleted [{}].", path);
-                        handleModified(path);
+                        handleDeleted(path);
                     }
                 }
                 key.reset();
@@ -59,11 +58,23 @@ public class PathWatchService implements Runnable {
     }
 
     private void handleCreated(Path path) {
+        String pathStr = path.toAbsolutePath().toString();
+        if (this.pathCreated.contains(pathStr)) {
+            this.pathCreated.remove(pathStr);
+        }
+
+        this.pathCreated.add(pathStr);
+
         callHandler(handler -> handler.handleCreated(path));
     }
 
     private void handleModified(Path path) {
-        callHandler(handler -> handler.handleModified(path));
+        String pathStr = path.toAbsolutePath().toString();
+        if (this.pathCreated.contains(pathStr)) {
+            this.pathCreated.remove(pathStr);
+        } else {
+            callHandler(handler -> handler.handleModified(path));
+        }
     }
 
     private void handleDeleted(Path path) {
@@ -72,13 +83,15 @@ public class PathWatchService implements Runnable {
 
     private void callHandler(Consumer<? super PathWatchEventHandler> action) {
         getHandlerPathsMap().keySet()
-                .forEach(action);
+                .forEach(handler -> {
+                    action.accept(handler);
+                    addHandler(handler);
+                });
     }
 
     public void addHandlers(PathWatchEventHandler... handlers) {
         for (PathWatchEventHandler handler : handlers) {
             addHandler(handler);
-            handler.onChange(this::addHandler);
         }
     }
 
@@ -92,6 +105,10 @@ public class PathWatchService implements Runnable {
 
     private void addHandler(PathWatchEventHandler handler) {
         List<WatchablePath> watchablePaths = getWatchablePaths(handler);
+        if (watchablePaths.isEmpty()) {
+            return;
+        }
+
         List<WatchablePath> previousWatchablePaths = getHandlerPathsMap().put(handler, watchablePaths);
 
         if (previousWatchablePaths != null) {
@@ -108,7 +125,7 @@ public class PathWatchService implements Runnable {
         return toWatchablePaths(handler.getWatchablePaths());
     }
 
-    private List<WatchablePath> toWatchablePaths(Path... paths) {
+    private List<WatchablePath> toWatchablePaths(List<Path> paths) {
         List<WatchablePath> watchablePathList = new ArrayList<>();
         for (Path path : paths) {
             try {
@@ -129,7 +146,7 @@ public class PathWatchService implements Runnable {
     private WatchablePath toWatchable(Path path) {
         try {
             WatchKey key = startWatching(path);
-            LOGGER.info("Start watching path [{}].", path);
+            LOGGER.info("Watching path [{}].", path);
             return new WatchablePath(path, key);
         } catch (IOException e) {
             LOGGER.error("Coud not register watchservice for path [{}].", path);
