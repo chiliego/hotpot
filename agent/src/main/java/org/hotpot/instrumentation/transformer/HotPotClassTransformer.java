@@ -24,7 +24,7 @@ import org.objectweb.asm.ClassVisitor;
 
 public class HotPotClassTransformer implements ClassFileTransformer {
     private static Logger LOGGER = LogManager.getLogger(HotPotClassTransformer.class);
-    private Map<String, byte[]> redefineClasses;
+    private Map<String, Path> redefineClasses;
     private Supplier<Path> confFilePathSupplier;
     private List<String> redefinedClassloaders;
     private BiConsumer<Class<?>, byte[]> redefineFunc;
@@ -53,7 +53,7 @@ public class HotPotClassTransformer implements ClassFileTransformer {
                     LOGGER.error("Redefinition class [{}] failed.", className);
                 }
             } finally {
-                removeByteCode(className);
+                removeFromRedefinedList(className);
             }
         }
 
@@ -69,25 +69,23 @@ public class HotPotClassTransformer implements ClassFileTransformer {
     }
 
     public void addModifiedClass(String className, Path classFilePath) {
-        try {
-            byte[] modifiedBytecode = Files.readAllBytes(classFilePath);
-            addModifiedClass(className, modifiedBytecode);
-        } catch (IOException e) {
-            LOGGER.info("Add class [{}] from file [{}] to redefine List failed.", className, classFilePath);
-            e.printStackTrace();
-        }
-    }
-
-    public void addModifiedClass(String className, byte[] modifiedBytecode) {
-        redefineClasses.put(internalName(className), modifiedBytecode);
-        LOGGER.info("Add class [{}] from file [{}] to redefine List.", className);
+        LOGGER.info("Add class [{}] from file [{}] to redefine List.", className, classFilePath);
+        redefineClasses.put(internalName(className), classFilePath);
     }
 
     public byte[] getByteCode(String className) {
-        return redefineClasses.get(internalName(className));
+        Path classFilePath = redefineClasses.get(internalName(className));
+        try {
+            return Files.readAllBytes(classFilePath);
+        } catch (IOException e) {
+            LOGGER.info("Get class bytecode from file [{}] failed.", classFilePath);
+            e.printStackTrace();
+        }
+
+        return null;
     }
 
-    public byte[] removeByteCode(String className) {
+    public Path removeFromRedefinedList(String className) {
         return redefineClasses.remove(internalName(className));
     }
 
