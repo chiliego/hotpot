@@ -71,6 +71,8 @@ public class HotPotAgent {
         classPathHandler.onModify(modifyObserver);
         hotPotClassTransformer.setConfFilePath(classPathHandler::getConfFilePath);
         hotPotClassTransformer.setRedefineFunc((clazz, byteCode) -> reDefine(inst, clazz, byteCode));
+        hotPotClassTransformer.setInitiatedClassesSupplier(inst::getInitiatedClasses);
+        hotPotClassTransformer.setRetransformFunc((classes) -> retransform(inst, classes));
         
     }
 
@@ -96,6 +98,7 @@ public class HotPotAgent {
             e.printStackTrace();
         }
     }
+
     public static void retransform(Instrumentation inst, Class<?>... classes) {
         String classesStr = Stream.of(classes)
         .map(Class::toString)
