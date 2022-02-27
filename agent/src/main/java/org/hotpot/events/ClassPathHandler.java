@@ -26,7 +26,11 @@ public class ClassPathHandler implements PathWatchEventHandler{
     }
 
     private boolean isConfigFile(Path path) {
-        return getConfFilePath().equals(path);
+        try {
+            return Files.isSameFile(getConfFilePath(), path);
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     public Path getConfFilePath() {
@@ -53,7 +57,7 @@ public class ClassPathHandler implements PathWatchEventHandler{
             readConfigFile(path);
         } else {
             if (Files.exists(path) && path.getFileName().toString().endsWith(".class")) {
-                LOGGER.info("Class file [{}] modified.", path);
+                //LOGGER.info("Class file [{}] modified.", path);
                 handleClassModified(path);
             }
         }
@@ -63,7 +67,7 @@ public class ClassPathHandler implements PathWatchEventHandler{
         String className = internalClassNameFromPath(path);
         if(className != null) {
             if(createObserver != null) {
-                LOGGER.info("Notify observer for created class [{}] with file [{}].", className, path);
+                //LOGGER.info("Notify observer for created class [{}] with file [{}].", className, path);
                 createObserver.accept(className, path);
             }
         } else {
@@ -75,7 +79,7 @@ public class ClassPathHandler implements PathWatchEventHandler{
         String className = internalClassNameFromPath(path);
         if(className != null) {
             if(modifyObserver != null) {
-                LOGGER.info("Notify observer for modified class [{}] with file [{}].", className, path);
+                //LOGGER.info("Notify observer for modified class [{}] with file [{}].", className, path);
                 modifyObserver.accept(className, path);
             }
         } else {

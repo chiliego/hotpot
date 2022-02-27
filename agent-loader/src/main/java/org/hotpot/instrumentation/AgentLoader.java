@@ -52,13 +52,13 @@ public class AgentLoader {
             String jvmPid = selectedVM.id();
             LOGGER.info("Attaching to target JVM with PID: " + jvmPid);
 
-            String configFilePath = null;
+            String hotpotHomeFolder = null;
             if(args.length == 1) {
-                configFilePath = args[0];
+                hotpotHomeFolder = args[0];
             }
 
             VirtualMachine vm = VirtualMachine.attach(jvmPid);
-            vm.loadAgent(agentJarPathStr, configFilePath);
+            vm.loadAgent(agentJarPathStr, hotpotHomeFolder);
             vm.detach();
             LOGGER.info("Attached to target JVM and loaded HotPot agent successfully.");
         } catch (AttachNotSupportedException e) {
